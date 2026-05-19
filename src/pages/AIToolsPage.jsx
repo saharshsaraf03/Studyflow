@@ -81,8 +81,7 @@ const LOADING_MESSAGES = [
   'Almost there...',
 ];
 
-const API_ENDPOINT =
-  'https://v3u5diepj6ssc7464rwra3mfhi0odnqa.lambda-url.ap-south-1.on.aws/';
+const API_ENDPOINT = 'https://studyflow-rag-backend.onrender.com/';
 
 // ── Main Component ───────────────────────────────────────────
 
