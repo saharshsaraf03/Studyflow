@@ -15,10 +15,11 @@ An intelligent study planning application that combines adaptive scheduling algo
 - **Visual Dashboard** — Charts showing time distribution, planned vs actual hours, and subject breakdowns
 
 ### AI-Powered PDF Tools
+- **RAG Pipeline** — Full retrieval-augmented generation pipeline: PDF ingestion → text chunking → FAISS vector indexing → semantic similarity retrieval → context-grounded LLM response
 - **PDF Upload & Analysis** — Drag-and-drop any study material PDF for instant AI analysis
 - **Structured Study Plans** — Auto-generated topic breakdown with priority levels, estimated hours, and recommended study order
 - **Exam-Ready Summaries** — Comprehensive summaries covering every concept, definition, formula, and key point — detailed enough to study directly from
-- **Interactive Chatbot** — Ask questions about your uploaded material and get context-aware answers
+- **Interactive Chatbot** — Ask questions about your uploaded material and get context-aware answers grounded in retrieved document chunks
 - **PDF Export** — Download generated study plans, summaries, and chat transcripts as formatted PDFs
 
 ---
@@ -35,37 +36,43 @@ An intelligent study planning application that combines adaptive scheduling algo
 - **jsPDF** — Client-side PDF generation
 
 ### Backend
-- **AWS Lambda** — Serverless function for AI processing
-- **Lambda Function URL** — Direct HTTPS endpoint (no API Gateway)
+- **FastAPI** — Python REST API framework
+- **LangChain** — RAG pipeline orchestration and LLM chain management
+- **FAISS** — Vector similarity search for semantic chunk retrieval
+- **HuggingFace Sentence Transformers** — `all-MiniLM-L6-v2` embeddings for document chunking
 - **OpenAI GPT-4o mini** — LLM for study plan generation, summarization, and Q&A
+- **Uvicorn** — ASGI server
 
 ### Hosting
+- **Render** — Python FastAPI backend (free tier)
 - **AWS S3** — Static website hosting
 - **AWS CloudFront** — CDN with HTTPS
 
 ---
 
 ## Architecture
-
-```
 ┌─────────────────────────────────────────────────┐
 │                   Frontend                       │
 │            React + Vite + Tailwind               │
 │         (S3 + CloudFront — HTTPS)                │
 └──────────────────┬──────────────────────────────┘
-                   │ POST (extractedText + action)
-                   ▼
+│ POST (extractedText + action)
+▼
 ┌─────────────────────────────────────────────────┐
-│              AWS Lambda Function                 │
-│          (Node.js 20 — Function URL)             │
+│         FastAPI Backend (Render)                 │
+│              Python 3.11                         │
 │                                                  │
-│  ┌─────────────┐    ┌────────────────────────┐  │
-│  │ Parse Input  │───▶│  OpenAI GPT-4o mini    │  │
-│  └─────────────┘    │  - generate_plan       │  │
-│                      │  - chat                │  │
-│                      └────────────────────────┘  │
+│  ┌─────────────────────────────────────────┐    │
+│  │           RAG Pipeline                  │    │
+│  │  1. Chunk text (RecursiveTextSplitter)  │    │
+│  │  2. Embed chunks (all-MiniLM-L6-v2)    │    │
+│  │  3. Index with FAISS                    │    │
+│  │  4. Retrieve top-k relevant chunks      │    │
+│  │  5. Pass context to GPT-4o mini         │    │
+│  └─────────────────────────────────────────┘    │
+│                                                  │
+│  Actions: generate_plan | chat                   │
 └─────────────────────────────────────────────────┘
-```
 
 ---
 
@@ -73,16 +80,16 @@ An intelligent study planning application that combines adaptive scheduling algo
 
 ### Prerequisites
 - Node.js 18+
+- Python 3.11+
 - npm
-- OpenAI API key (for AI features)
-- AWS account (for deployment)
+- OpenAI API key
 
-### Local Development
+### Frontend — Local Development
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/saharshsaraf03/studyflow.git
-cd studyflow
+git clone https://github.com/saharshsaraf03/Studyflow.git
+cd Studyflow
 ```
 
 2. **Install dependencies**
@@ -97,56 +104,69 @@ npm run dev
 
 4. **Open** `http://localhost:3000` in your browser
 
+### Backend — Local Development
+
+1. **Install Python dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+2. **Set environment variable**
+```bash
+set OPENAI_API_KEY=your-openai-key-here
+```
+
+3. **Start the FastAPI server**
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
 ### Build for Production
 
 ```bash
 npm run build
 ```
 
-The output will be in the `dist` folder, ready to deploy to any static hosting.
+The output will be in the `dist` folder, ready to deploy to S3.
 
 ---
 
 ## Project Structure
-
-```
-src/
-├── App.jsx                         # Root component, routing, global state
-├── main.jsx                        # Entry point
-├── index.css                       # Global styles, Tailwind, custom components
-├── pages/
-│   ├── HomePage.jsx                # Landing page with hero and features
-│   ├── SetupPage.jsx               # Subject configuration form
-│   ├── DashboardPage.jsx           # Schedule, progress, and analytics
-│   └── AIToolsPage.jsx             # PDF upload, AI study plan, chatbot
-├── components/
-│   ├── Navbar.jsx                  # Responsive navigation bar
-│   ├── FormComponent.jsx           # Subject input form
-│   ├── DailyPlanTable.jsx          # Editable daily schedule table
-│   ├── ProgressTracker.jsx         # Log actual study hours
-│   ├── StatusIndicators.jsx        # Quick-glance stat cards
-│   └── Charts/
-│       ├── ProgressBar.jsx         # Animated progress bar
-│       ├── SubjectPieChart.jsx     # Subject time distribution
-│       └── PlannedVsActualChart.jsx # Planned vs actual area chart
-└── utils/
-    ├── PlannerEngine.js            # Study plan generation algorithm
-    └── storage.js                  # localStorage persistence
-```
+├── main.py                         # FastAPI backend — RAG pipeline
+├── requirements.txt                # Python dependencies
+├── src/
+│   ├── App.jsx                     # Root component, routing, global state
+│   ├── main.jsx                    # Entry point
+│   ├── index.css                   # Global styles, Tailwind, custom components
+│   ├── pages/
+│   │   ├── HomePage.jsx            # Landing page with hero and features
+│   │   ├── SetupPage.jsx           # Subject configuration form
+│   │   ├── DashboardPage.jsx       # Schedule, progress, and analytics
+│   │   └── AIToolsPage.jsx         # PDF upload, AI study plan, chatbot
+│   ├── components/
+│   │   ├── Navbar.jsx              # Responsive navigation bar
+│   │   ├── FormComponent.jsx       # Subject input form
+│   │   ├── DailyPlanTable.jsx      # Editable daily schedule table
+│   │   ├── ProgressTracker.jsx     # Log actual study hours
+│   │   ├── StatusIndicators.jsx    # Quick-glance stat cards
+│   │   └── Charts/
+│   │       ├── ProgressBar.jsx     # Animated progress bar
+│   │       ├── SubjectPieChart.jsx # Subject time distribution
+│   │       └── PlannedVsActualChart.jsx
+│   └── utils/
+│       ├── PlannerEngine.js        # Study plan generation algorithm
+│       └── storage.js             # localStorage persistence
 
 ---
 
 ## Study Plan Algorithm
 
 The planner uses a weighted priority formula to distribute study hours:
-
-```
 priority = (difficulty × 0.35) + (syllabus_size × 0.30) + (urgency × 0.35)
-```
 
 Where:
 - **Difficulty**: Easy (1) → Hard (5)
-- **Syllabus size**: Small (1) → Large (5)  
+- **Syllabus size**: Small (1) → Large (5)
 - **Urgency**: Inversely proportional to days remaining until exam
 
 Hours are distributed proportionally across subjects based on their normalized priority scores. When days are missed, deficit hours are automatically redistributed across remaining days with boosted priority.
@@ -159,12 +179,14 @@ Hours are distributed proportionally across subjects based on their normalized p
 1. Build: `npm run build`
 2. Upload `dist` contents to S3 bucket with static hosting enabled
 3. Configure CloudFront distribution pointing to S3 website endpoint
+4. Create CloudFront invalidation (`/*`) after each deployment
 
-### Backend (AWS Lambda)
-1. Create Lambda function with Node.js 20.x runtime
-2. Set environment variable: `OPENAI_API_KEY`
-3. Configure Function URL with CORS (Allow origin: *, Methods: POST, Headers: content-type)
-4. Set timeout to 5 minutes, memory to 512MB
+### Backend (Render)
+1. Connect GitHub repo to Render as a Web Service
+2. Set runtime to Python 3.11
+3. Build command: `pip install -r requirements.txt`
+4. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+5. Add environment variable: `OPENAI_API_KEY`
 
 ---
 
