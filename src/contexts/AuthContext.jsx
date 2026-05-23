@@ -5,22 +5,22 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);        // { email, name, sub }
-  const [isLoading, setIsLoading] = useState(true); // true while checking session
+  const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // Check for existing session on mount
   useEffect(() => {
     checkAuth();
   }, []);
 
   async function checkAuth() {
     try {
-      await getCurrentSession();
+      const session = await getCurrentSession();
       const attrs = await getUserAttributes();
       setUser({
         email: attrs.email,
         name: attrs.name || attrs.email.split('@')[0],
         sub: attrs.sub,
+        _session: session,
       });
       setIsAuthenticated(true);
     } catch {
@@ -36,6 +36,7 @@ export function AuthProvider({ children }) {
       email: attributes.email,
       name: attributes.name || attributes.email.split('@')[0],
       sub: attributes.sub,
+      _session: session,
     });
     setIsAuthenticated(true);
   }
@@ -46,8 +47,30 @@ export function AuthProvider({ children }) {
     setIsAuthenticated(false);
   }
 
+  /**
+   * getToken() — returns the current Cognito ID token string.
+   * Used by api.js to attach Authorization: Bearer <token> to every request.
+   * Cognito sessions auto-refresh transparently via getCurrentSession().
+   */
+  async function getToken() {
+    try {
+      const session = await getCurrentSession();
+      return session.getIdToken().getJwtToken();
+    } catch {
+      return null;
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated, login, logout, checkAuth }}>
+    <AuthContext.Provider value={{
+      user,
+      isLoading,
+      isAuthenticated,
+      login,
+      logout,
+      checkAuth,
+      getToken,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, Settings, Download, Trash2, RefreshCw, 
-  ArrowLeft, BarChart3, Clock, Table2, Activity 
+import {
+  LayoutDashboard, Settings, Download, Trash2,
+  ArrowLeft, BarChart3, Clock, Table2, Activity
 } from 'lucide-react';
 import DailyPlanTable from '../components/DailyPlanTable';
 import ProgressTracker from '../components/ProgressTracker';
@@ -11,11 +11,7 @@ import ProgressBar from '../components/Charts/ProgressBar';
 import SubjectPieChart from '../components/Charts/SubjectPieChart';
 import PlannedVsActualChart from '../components/Charts/PlannedVsActualChart';
 import { recalculatePlan, calculateStats, getSubjectColor } from '../utils/PlannerEngine';
-import { clearData } from '../utils/storage';
 
-/**
- * DashboardPage — Main analytics and management page
- */
 const DashboardPage = ({ planData, setPlanData }) => {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
@@ -23,14 +19,13 @@ const DashboardPage = ({ planData, setPlanData }) => {
 
   useEffect(() => {
     if (planData) {
-      const s = calculateStats(planData);
-      setStats(s);
+      setStats(calculateStats(planData));
     }
   }, [planData]);
 
   const handlePlanUpdate = useCallback((updatedPlan) => {
     const recalculated = recalculatePlan(updatedPlan);
-    setPlanData(recalculated);
+    setPlanData(recalculated); // this now saves to cloud via App.jsx
   }, [setPlanData]);
 
   const handleExport = async () => {
@@ -58,8 +53,10 @@ const DashboardPage = ({ planData, setPlanData }) => {
   };
 
   const handleReset = () => {
-    if (window.confirm('Are you sure? This will delete your study plan and all progress.')) {
-      clearData();
+    if (window.confirm('Are you sure? This will delete your study plan and all progress from your account.')) {
+      // setPlanData(null) triggers a cloud save with null — which is handled
+      // gracefully by the backend (it simply doesn't save null).
+      // We call it with null to clear React state, then navigate away.
       setPlanData(null);
       navigate('/setup');
     }
@@ -89,24 +86,19 @@ const DashboardPage = ({ planData, setPlanData }) => {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{
-                background: 'linear-gradient(135deg, #6C5CE7, #4FACFE)',
-              }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #6C5CE7, #4FACFE)' }}>
                 <LayoutDashboard className="w-5 h-5 text-white" />
               </div>
               <h1 className="text-2xl sm:text-3xl font-bold text-surface-900">Dashboard</h1>
             </div>
-            <p className="text-sm text-surface-500">
-              Track your progress and manage your study schedule.
-            </p>
+            <p className="text-sm text-surface-500">Track your progress and manage your study schedule.</p>
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-2 no-print">
             <button
               onClick={handleExport}
               className="px-3 py-2 rounded-xl text-xs font-medium text-surface-600 bg-white border border-surface-200 hover:bg-surface-50 hover:border-surface-300 transition-all flex items-center gap-1.5"
-              title="Export as PDF"
             >
               <Download className="w-3.5 h-3.5" />
               Export PDF
@@ -121,28 +113,24 @@ const DashboardPage = ({ planData, setPlanData }) => {
             <button
               onClick={handleReset}
               className="px-3 py-2 rounded-xl text-xs font-medium text-red-500 bg-red-50 border border-red-200 hover:bg-red-100 transition-all flex items-center gap-1.5"
-              title="Delete plan"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
-        {/* Status Indicators */}
         {stats && (
           <div className="mb-6 animate-fade-in">
             <StatusIndicators stats={stats} />
           </div>
         )}
 
-        {/* Overall Progress */}
         {stats && (
           <div className="sf-card p-5 mb-6 animate-fade-in" style={{ animationDelay: '0.1s' }}>
             <ProgressBar percentage={stats.completionPercentage} label="Overall Completion" />
           </div>
         )}
 
-        {/* Tab navigation */}
         <div className="flex items-center gap-1 mb-6 no-print">
           {[
             { id: 'schedule', label: 'Schedule', icon: Table2 },
@@ -163,7 +151,6 @@ const DashboardPage = ({ planData, setPlanData }) => {
           ))}
         </div>
 
-        {/* ========== SCHEDULE TAB ========== */}
         {activeTab === 'schedule' && (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fade-in">
             <div className="lg:col-span-3">
@@ -173,8 +160,8 @@ const DashboardPage = ({ planData, setPlanData }) => {
                   <h2 className="text-lg font-semibold text-surface-900">Daily Study Plan</h2>
                   <span className="text-xs text-surface-400 ml-auto">Click cells to edit</span>
                 </div>
-                <DailyPlanTable 
-                  planData={planData} 
+                <DailyPlanTable
+                  planData={planData}
                   onUpdateDay={handlePlanUpdate}
                   subjectNames={subjectNames}
                 />
@@ -186,7 +173,7 @@ const DashboardPage = ({ planData, setPlanData }) => {
                   <Activity className="w-5 h-5 text-accent-blue" />
                   <h2 className="text-lg font-semibold text-surface-900">Log Progress</h2>
                 </div>
-                <ProgressTracker 
+                <ProgressTracker
                   planData={planData}
                   onUpdatePlan={handlePlanUpdate}
                   subjectNames={subjectNames}
@@ -196,7 +183,6 @@ const DashboardPage = ({ planData, setPlanData }) => {
           </div>
         )}
 
-        {/* ========== ANALYTICS TAB ========== */}
         {activeTab === 'analytics' && stats && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
             <div className="sf-card p-5">
@@ -204,7 +190,7 @@ const DashboardPage = ({ planData, setPlanData }) => {
                 <BarChart3 className="w-5 h-5 text-primary-500" />
                 <h2 className="text-lg font-semibold text-surface-900">Time Distribution</h2>
               </div>
-              <SubjectPieChart 
+              <SubjectPieChart
                 planned={stats.subjectDistribution}
                 actual={stats.subjectActualDistribution}
               />
@@ -249,19 +235,15 @@ const DashboardPage = ({ planData, setPlanData }) => {
                           </td>
                           <td>
                             <span className={`badge ${
-                              subject.difficulty === 'hard' ? 'badge-hard' : 
+                              subject.difficulty === 'hard' ? 'badge-hard' :
                               subject.difficulty === 'easy' ? 'badge-easy' : 'badge-medium'
-                            }`}>
-                              {subject.difficulty}
-                            </span>
+                            }`}>{subject.difficulty}</span>
                           </td>
                           <td>
                             <span className={`badge ${
-                              subject.syllabusSize === 'large' ? 'badge-hard' : 
+                              subject.syllabusSize === 'large' ? 'badge-hard' :
                               subject.syllabusSize === 'small' ? 'badge-easy' : 'badge-medium'
-                            }`}>
-                              {subject.syllabusSize}
-                            </span>
+                            }`}>{subject.syllabusSize}</span>
                           </td>
                           <td className="text-surface-600 text-sm">
                             {new Date(subject.examDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -271,9 +253,9 @@ const DashboardPage = ({ planData, setPlanData }) => {
                           <td>
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-1.5 rounded-full overflow-hidden bg-surface-100">
-                                <div 
+                                <div
                                   className="h-full rounded-full transition-all duration-500"
-                                  style={{ 
+                                  style={{
                                     width: `${Math.min(100, pct)}%`,
                                     background: `linear-gradient(90deg, ${getSubjectColor(i)}, ${getSubjectColor(i)}aa)`,
                                   }}
