@@ -9,15 +9,16 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from jose import jwt, JWTError
+import jwt as pyjwt
 import httpx
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -26,12 +27,24 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-# ── App & Rate Limiter ─────────────────────────────────────────────────────────
+# ── Rate Limiter ───────────────────────────────────────────────────────────────
 
 limiter = Limiter(key_func=get_remote_address)
+
+# ── App ────────────────────────────────────────────────────────────────────────
+
 app = FastAPI()
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# Rate limit exceeded handler — defined manually to avoid import issues
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"error": "Rate limit exceeded. Please slow down."}
+    )
+
 
 # ── CORS ───────────────────────────────────────────────────────────────────────
 
@@ -60,9 +73,11 @@ table = dynamodb.Table(TABLE_NAME)
 
 COGNITO_USER_POOL_ID = "ap-south-1_5qo8gZ9cS"
 COGNITO_REGION = "ap-south-1"
-COGNITO_JWKS_URL = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{COGNITO_USER_POOL_ID}/.well-known/jwks.json"
+COGNITO_JWKS_URL = (
+    f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com"
+    f"/{COGNITO_USER_POOL_ID}/.well-known/jwks.json"
+)
 
-# Cache JWKS so we don't hit Cognito on every request
 _jwks_cache = None
 _jwks_cache_time = 0
 JWKS_CACHE_TTL = 3600  # 1 hour
@@ -84,39 +99,39 @@ async def get_jwks():
 security = HTTPBearer()
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
     """
     Validates the Cognito JWT from the Authorization header.
-    Returns the decoded token payload, which contains 'sub' (user ID).
-    
-    Think of this like a hotel key card reader — every protected endpoint
-    runs the token through this function before doing anything else.
+    Returns { sub, email } on success, raises 401 on failure.
     """
     token = credentials.credentials
     try:
-        # Decode header only (no verification yet) to get the key ID
-        unverified_header = jwt.get_unverified_header(token)
+        # Step 1: decode header only to get the key ID (kid)
+        unverified_header = pyjwt.get_unverified_header(token)
         kid = unverified_header.get("kid")
 
-        # Fetch JWKS (Cognito's public keys)
+        # Step 2: fetch Cognito's public keys (cached)
         jwks = await get_jwks()
 
-        # Find the matching public key
+        # Step 3: find the matching public key by kid
         public_key = None
         for key in jwks.get("keys", []):
             if key["kid"] == kid:
-                public_key = key
+                # Convert JWK to PEM format using PyJWT's built-in helper
+                public_key = pyjwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
                 break
 
         if not public_key:
             raise HTTPException(status_code=401, detail="Invalid token: key not found")
 
-        # Verify and decode the token
-        payload = jwt.decode(
+        # Step 4: verify and decode
+        payload = pyjwt.decode(
             token,
             public_key,
             algorithms=["RS256"],
-            options={"verify_aud": False},  # Cognito tokens don't always have aud
+            options={"verify_aud": False},
         )
 
         user_sub = payload.get("sub")
@@ -125,15 +140,17 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
         return {"sub": user_sub, "email": payload.get("email", "")}
 
-    except JWTError as e:
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except pyjwt.InvalidTokenError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 
-# ── Request / Response Models ──────────────────────────────────────────────────
+# ── Request Models ─────────────────────────────────────────────────────────────
 
 class RAGRequestBody(BaseModel):
     extractedText: str
-    action: str  # "generate_plan" or "chat"
+    action: str
     question: Optional[str] = None
 
 
@@ -149,7 +166,7 @@ class SaveDocumentRequest(BaseModel):
 
 
 class SaveChatRequest(BaseModel):
-    docId: Optional[str] = None  # None = global chat
+    docId: Optional[str] = None
     messages: List[dict]
 
 
@@ -183,13 +200,11 @@ def retrieve_relevant_chunks(vectorstore, query: str, k: int = 6) -> str:
 # ── DynamoDB Helpers ───────────────────────────────────────────────────────────
 
 def db_put(pk: str, sk: str, data: dict):
-    """Write an item to DynamoDB. Merges pk/sk into the data dict."""
     item = {"PK": pk, "SK": sk, "updatedAt": datetime.utcnow().isoformat(), **data}
     table.put_item(Item=item)
 
 
 def db_get(pk: str, sk: str) -> Optional[dict]:
-    """Get a single item. Returns None if not found."""
     try:
         resp = table.get_item(Key={"PK": pk, "SK": sk})
         return resp.get("Item")
@@ -198,7 +213,6 @@ def db_get(pk: str, sk: str) -> Optional[dict]:
 
 
 def db_query(pk: str, sk_prefix: str) -> list:
-    """Query all items under a PK with a given SK prefix."""
     try:
         resp = table.query(
             KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with(sk_prefix)
@@ -209,11 +223,10 @@ def db_query(pk: str, sk_prefix: str) -> list:
 
 
 def db_delete(pk: str, sk: str):
-    """Delete a single item."""
     table.delete_item(Key={"PK": pk, "SK": sk})
 
 
-# ── Existing RAG Route (unchanged — v1 compatibility) ─────────────────────────
+# ── Existing RAG Route (v1 compatible) ────────────────────────────────────────
 
 @app.post("/")
 @limiter.limit("10/minute")
@@ -225,7 +238,6 @@ async def handle(request: Request, body: RAGRequestBody):
         return {"error": "Extracted text is too short."}
 
     vectorstore = build_faiss_index(body.extractedText)
-
     llm = ChatOpenAI(
         model="gpt-4o-mini",
         temperature=0.3,
@@ -308,7 +320,6 @@ async def save_planner(
     body: SavePlannerRequest,
     user=Depends(get_current_user)
 ):
-    """Save the user's study plan (subjects, schedule, progress) to DynamoDB."""
     try:
         db_put(
             pk=f"USER#{user['sub']}",
@@ -326,7 +337,6 @@ async def load_planner(
     request: Request,
     user=Depends(get_current_user)
 ):
-    """Load the user's study plan from DynamoDB."""
     item = db_get(pk=f"USER#{user['sub']}", sk="PLANNER")
     if not item:
         return {"success": True, "planData": None}
@@ -342,10 +352,6 @@ async def save_document(
     body: SaveDocumentRequest,
     user=Depends(get_current_user)
 ):
-    """
-    Save a document's metadata, extracted text, and AI results.
-    docId is generated client-side (timestamp + random).
-    """
     try:
         db_put(
             pk=f"USER#{user['sub']}",
@@ -368,9 +374,7 @@ async def list_documents(
     request: Request,
     user=Depends(get_current_user)
 ):
-    """List all document metadata for the user (no extracted text — keeps payload small)."""
     items = db_query(pk=f"USER#{user['sub']}", sk_prefix="DOC#")
-    # Strip extractedText from the list response — only return metadata
     docs = [
         {
             "docId": item.get("docId"),
@@ -390,7 +394,6 @@ async def get_document(
     doc_id: str,
     user=Depends(get_current_user)
 ):
-    """Get a single document with full extracted text and AI results."""
     item = db_get(pk=f"USER#{user['sub']}", sk=f"DOC#{doc_id}")
     if not item:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -404,10 +407,8 @@ async def delete_document(
     doc_id: str,
     user=Depends(get_current_user)
 ):
-    """Delete a document and its associated chat history."""
     try:
         db_delete(pk=f"USER#{user['sub']}", sk=f"DOC#{doc_id}")
-        # Also delete associated chat history
         db_delete(pk=f"USER#{user['sub']}", sk=f"CHAT#DOC#{doc_id}")
         return {"success": True}
     except Exception as e:
@@ -423,10 +424,6 @@ async def save_chat(
     body: SaveChatRequest,
     user=Depends(get_current_user)
 ):
-    """
-    Save chat history. If docId is provided, saves per-document chat.
-    If docId is None, saves global chat history.
-    """
     try:
         sk = f"CHAT#DOC#{body.docId}" if body.docId else "CHAT#GLOBAL"
         db_put(
@@ -446,7 +443,6 @@ async def load_chat(
     doc_id: Optional[str] = None,
     user=Depends(get_current_user)
 ):
-    """Load chat history for a document or global chat."""
     sk = f"CHAT#DOC#{doc_id}" if doc_id else "CHAT#GLOBAL"
     item = db_get(pk=f"USER#{user['sub']}", sk=sk)
     if not item:
@@ -454,7 +450,7 @@ async def load_chat(
     return {"success": True, "messages": item.get("messages", [])}
 
 
-# ── localStorage Migration Endpoint ───────────────────────────────────────────
+# ── Migration Endpoint ─────────────────────────────────────────────────────────
 
 @app.post("/api/migrate")
 @limiter.limit("5/minute")
@@ -463,25 +459,16 @@ async def migrate_from_localstorage(
     body: MigrationRequest,
     user=Depends(get_current_user)
 ):
-    """
-    One-time migration: import localStorage data into DynamoDB.
-    Only writes if the user's DynamoDB record is empty (prevents overwriting cloud data).
-    """
     try:
         existing_planner = db_get(pk=f"USER#{user['sub']}", sk="PLANNER")
-
         if existing_planner:
-            # User already has cloud data — do not overwrite
             return {"success": False, "reason": "Cloud data already exists. Migration skipped."}
-
-        # Write planner data
         if body.planData:
             db_put(
                 pk=f"USER#{user['sub']}",
                 sk="PLANNER",
                 data={"planData": body.planData}
             )
-
         return {"success": True, "migrated": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

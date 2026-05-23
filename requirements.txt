@@ -10,6 +10,6 @@ openai
 pypdf
 python-multipart
 boto3
-python-jose[cryptography]
+PyJWT[crypto]
 slowapi
 httpx
