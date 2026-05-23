@@ -3,6 +3,7 @@ import json
 import re
 import time
 import base64
+import numpy as np
 from datetime import datetime
 from typing import Optional, List
 
@@ -15,12 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
-import httpx
-
-# NOTE: LangChain/HuggingFace imports are intentionally NOT at the top level.
-# On Render free tier, importing HuggingFaceEmbeddings at module load time
-# triggers model download which OOMs or times out before uvicorn binds the port.
-# All heavy imports are deferred inside the route handler via lazy_imports().
+from openai import OpenAI
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -33,6 +29,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── OpenAI client ──────────────────────────────────────────────────────────────
+
+def get_openai_client():
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
+    return OpenAI(api_key=api_key)
 
 # ── AWS / DynamoDB ─────────────────────────────────────────────────────────────
 
@@ -47,7 +51,7 @@ dynamodb = boto3.resource(
 )
 table = dynamodb.Table(TABLE_NAME)
 
-# ── JWT Auth (stdlib only — no crypto packages) ────────────────────────────────
+# ── JWT Auth (stdlib only) ─────────────────────────────────────────────────────
 
 COGNITO_USER_POOL_ID = "ap-south-1_5qo8gZ9cS"
 COGNITO_ISSUER = f"https://cognito-idp.ap-south-1.amazonaws.com/{COGNITO_USER_POOL_ID}"
@@ -56,14 +60,12 @@ security = HTTPBearer()
 
 
 def decode_jwt_payload(token: str) -> dict:
-    """Decode JWT payload using stdlib base64 — no crypto package needed."""
     parts = token.split(".")
     if len(parts) != 3:
         raise ValueError("Invalid JWT format")
     payload_b64 = parts[1]
     payload_b64 += "=" * (4 - len(payload_b64) % 4)
-    payload_bytes = base64.urlsafe_b64decode(payload_b64)
-    return json.loads(payload_bytes.decode("utf-8"))
+    return json.loads(base64.urlsafe_b64decode(payload_b64).decode("utf-8"))
 
 
 async def get_current_user(
@@ -72,59 +74,107 @@ async def get_current_user(
     token = credentials.credentials
     try:
         payload = decode_jwt_payload(token)
-
-        iss = payload.get("iss", "")
-        if COGNITO_ISSUER not in iss:
+        if COGNITO_ISSUER not in payload.get("iss", ""):
             raise HTTPException(status_code=401, detail="Invalid token issuer")
-
-        exp = payload.get("exp", 0)
-        if exp < time.time():
+        if payload.get("exp", 0) < time.time():
             raise HTTPException(status_code=401, detail="Token expired")
-
         user_sub = payload.get("sub")
         if not user_sub:
             raise HTTPException(status_code=401, detail="Invalid token: missing sub")
-
         return {"sub": user_sub, "email": payload.get("email", "")}
-
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 
-# ── Lazy imports — deferred until first RAG request ───────────────────────────
-# This is the critical fix: uvicorn binds the port immediately on startup,
-# THEN the model downloads on the first actual API call.
-# Like a restaurant that opens its doors before the chef finishes prep —
-# the kitchen isn't ready yet, but the host can seat you first.
+# ── RAG Pipeline (OpenAI Embeddings + numpy cosine similarity) ─────────────────
+#
+# Analogy: Previously we had a forklift (FAISS + PyTorch + HuggingFace) to
+# move semantic similarity search. Now we use a hand truck (numpy dot products)
+# — same job, same results for our text sizes, 400MB lighter.
+#
+# How it works:
+# 1. Split text into ~500-char chunks with overlap
+# 2. Embed all chunks using OpenAI text-embedding-3-small (fast, cheap)
+# 3. Embed the query the same way
+# 4. Compute cosine similarity between query vector and all chunk vectors
+# 5. Return top-k chunks by similarity score
 
-_rag_imports = None
+def split_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
+    """Split text into overlapping chunks."""
+    chunks = []
+    separators = ["\n\n", "\n", ". ", " "]
 
-def get_rag_imports():
-    global _rag_imports
-    if _rag_imports is None:
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
-        from langchain_community.vectorstores import FAISS
-        from langchain_community.embeddings import HuggingFaceEmbeddings
-        from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
-        _rag_imports = {
-            "RecursiveCharacterTextSplitter": RecursiveCharacterTextSplitter,
-            "FAISS": FAISS,
-            "HuggingFaceEmbeddings": HuggingFaceEmbeddings,
-            "ChatOpenAI": ChatOpenAI,
-            "HumanMessage": HumanMessage,
-            "SystemMessage": SystemMessage,
-        }
-    return _rag_imports
+    # Try splitting by each separator in order of preference
+    remaining = text
+    while len(remaining) > chunk_size:
+        split_pos = -1
+        for sep in separators:
+            pos = remaining.rfind(sep, 0, chunk_size)
+            if pos > chunk_size // 2:  # Only use if split is past halfway
+                split_pos = pos + len(sep)
+                break
+
+        if split_pos == -1:
+            split_pos = chunk_size  # Hard cut if no separator found
+
+        chunks.append(remaining[:split_pos].strip())
+        remaining = remaining[split_pos - overlap:]  # Overlap for context continuity
+
+    if remaining.strip():
+        chunks.append(remaining.strip())
+
+    return [c for c in chunks if len(c) > 20]  # Filter trivially short chunks
+
+
+def embed_texts(client: OpenAI, texts: List[str]) -> np.ndarray:
+    """
+    Get embeddings for a list of texts.
+    Returns a 2D numpy array of shape (len(texts), embedding_dim).
+    text-embedding-3-small produces 1536-dimensional vectors.
+    """
+    response = client.embeddings.create(
+        model="text-embedding-3-small",
+        input=texts,
+    )
+    vectors = [item.embedding for item in response.data]
+    return np.array(vectors, dtype=np.float32)
+
+
+def cosine_similarity(query_vec: np.ndarray, chunk_vecs: np.ndarray) -> np.ndarray:
+    """
+    Compute cosine similarity between a query vector and all chunk vectors.
+    Cosine similarity = dot product of unit vectors.
+    Returns array of similarity scores, one per chunk.
+    """
+    # Normalize to unit vectors
+    query_norm = query_vec / (np.linalg.norm(query_vec) + 1e-10)
+    chunk_norms = chunk_vecs / (np.linalg.norm(chunk_vecs, axis=1, keepdims=True) + 1e-10)
+    return chunk_norms @ query_norm  # Matrix-vector dot product
+
+
+def retrieve_relevant_chunks(
+    client: OpenAI,
+    chunks: List[str],
+    chunk_embeddings: np.ndarray,
+    query: str,
+    k: int = 6
+) -> str:
+    """
+    Embed the query and find the k most similar chunks using cosine similarity.
+    """
+    query_embedding = embed_texts(client, [query])[0]
+    scores = cosine_similarity(query_embedding, chunk_embeddings)
+    top_k_indices = np.argsort(scores)[::-1][:k]
+    return "\n\n".join([chunks[i] for i in top_k_indices])
 
 
 # ── Request Models ─────────────────────────────────────────────────────────────
 
 class RAGRequestBody(BaseModel):
     extractedText: str
-    action: str
+    action: str  # "generate_plan" or "chat"
     question: Optional[str] = None
 
 
@@ -147,29 +197,6 @@ class SaveChatRequest(BaseModel):
 class MigrationRequest(BaseModel):
     planData: Optional[dict] = None
     documents: Optional[List[dict]] = None
-
-
-# ── RAG Helpers ────────────────────────────────────────────────────────────────
-
-def build_faiss_index(text: str):
-    ri = get_rag_imports()
-    splitter = ri["RecursiveCharacterTextSplitter"](
-        chunk_size=500,
-        chunk_overlap=50,
-        separators=["\n\n", "\n", ".", " "]
-    )
-    chunks = splitter.split_text(text)
-    embeddings = ri["HuggingFaceEmbeddings"](
-        model_name="all-MiniLM-L6-v2",
-        model_kwargs={"device": "cpu"}
-    )
-    vectorstore = ri["FAISS"].from_texts(chunks, embeddings)
-    return vectorstore
-
-
-def retrieve_relevant_chunks(vectorstore, query: str, k: int = 6) -> str:
-    docs = vectorstore.similarity_search(query, k=k)
-    return "\n\n".join([doc.page_content for doc in docs])
 
 
 # ── DynamoDB Helpers ───────────────────────────────────────────────────────────
@@ -201,33 +228,34 @@ def db_delete(pk: str, sk: str):
     table.delete_item(Key={"PK": pk, "SK": sk})
 
 
-# ── Existing RAG Route (v1 compatible) ────────────────────────────────────────
+# ── RAG Route (v1 compatible path, now using OpenAI embeddings) ────────────────
 
 @app.post("/")
-async def handle(request: Request, body: RAGRequestBody):
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        return {"error": "OPENAI_API_KEY not configured"}
+async def handle(body: RAGRequestBody):
     if not body.extractedText or len(body.extractedText) < 10:
         return {"error": "Extracted text is too short."}
 
-    ri = get_rag_imports()
+    client = get_openai_client()
 
-    vectorstore = build_faiss_index(body.extractedText)
-    llm = ri["ChatOpenAI"](
-        model="gpt-4o-mini",
-        temperature=0.3,
-        max_tokens=4000,
-        api_key=api_key
-    )
+    # Step 1: Chunk the text
+    chunks = split_text(body.extractedText, chunk_size=500, overlap=50)
+    if not chunks:
+        return {"error": "Could not extract usable chunks from the text."}
+
+    # Step 2: Embed all chunks in one API call (batched)
+    chunk_embeddings = embed_texts(client, chunks)
+
+    # Step 3: Route to generate_plan or chat
+    llm_system_prompt = ""
+    context = ""
 
     if body.action == "generate_plan":
         context = retrieve_relevant_chunks(
-            vectorstore,
+            client, chunks, chunk_embeddings,
             query="main topics chapters concepts definitions formulas",
             k=8
         )
-        system_prompt = """You are an expert academic study planner. Given study material, produce:
+        llm_system_prompt = """You are an expert academic study planner. Given study material, produce:
 
 1. A STRUCTURED STUDY PLAN — break content into topics with estimated hours, priority levels, and study order.
 2. An EXAM-READY SUMMARY — exhaustive coverage of every concept, definition, formula, theorem, and example. Be thorough — a student should be able to study entirely from this summary.
@@ -260,12 +288,16 @@ Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
     ]
   }
 }"""
-        messages = [
-            ri["SystemMessage"](content=system_prompt),
-            ri["HumanMessage"](content=f"Study material (retrieved via RAG):\n\n{context}")
-        ]
-        response = llm.invoke(messages)
-        raw = response.content
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=4000,
+            messages=[
+                {"role": "system", "content": llm_system_prompt},
+                {"role": "user", "content": f"Study material (retrieved via RAG):\n\n{context}"}
+            ]
+        )
+        raw = response.choices[0].message.content
         try:
             json_match = re.search(r'\{[\s\S]*\}', raw)
             parsed = json.loads(json_match.group(0))
@@ -276,13 +308,22 @@ Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
     elif body.action == "chat":
         if not body.question:
             return {"error": "Missing question field."}
-        context = retrieve_relevant_chunks(vectorstore, query=body.question, k=6)
-        messages = [
-            ri["SystemMessage"](content="You are a helpful study assistant. Answer questions based ONLY on the provided study material. If the answer is not in the material, say so. Be concise but thorough. Include relevant formulas, definitions, or examples when applicable."),
-            ri["HumanMessage"](content=f"Study material (retrieved via RAG):\n\n{context}\n\nQuestion: {body.question}")
-        ]
-        response = llm.invoke(messages)
-        return {"success": True, "answer": response.content}
+
+        context = retrieve_relevant_chunks(
+            client, chunks, chunk_embeddings,
+            query=body.question,
+            k=6
+        )
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=2000,
+            messages=[
+                {"role": "system", "content": "You are a helpful study assistant. Answer questions based ONLY on the provided study material. If the answer is not in the material, say so. Be concise but thorough. Include relevant formulas, definitions, or examples when applicable."},
+                {"role": "user", "content": f"Study material (retrieved via RAG):\n\n{context}\n\nQuestion: {body.question}"}
+            ]
+        )
+        return {"success": True, "answer": response.choices[0].message.content}
 
     return {"error": "Invalid action. Use 'generate_plan' or 'chat'."}
 
