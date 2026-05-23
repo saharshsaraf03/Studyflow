@@ -4,16 +4,10 @@
  * =====================================================
  * All calls to the Render backend go through this file.
  * Automatically attaches the Cognito JWT to every request.
- *
- * Think of this like a post office clerk who always stamps
- * "Return address: USER#{sub}" on every envelope before
- * sending it — no endpoint has to think about auth itself.
  */
 
 const BASE_URL = 'https://studyflow-rag-backend.onrender.com';
 
-// getToken is injected at app startup from AuthContext
-// This avoids circular imports (api.js can't import React hooks)
 let _getToken = null;
 
 export function initApi(getTokenFn) {
@@ -93,19 +87,43 @@ export async function loadChat(docId = null) {
   return apiFetch(`/api/chat/load${query}`);
 }
 
-// ── RAG (existing v1 endpoint — unchanged) ────────────────────────────────────
+// ── RAG — with cold-start warmup ──────────────────────────────────────────────
+/**
+ * Render free tier spins down after 15 min inactivity.
+ * On a cold start the first request gets a 502 while the server wakes up.
+ * Strategy: ping the health endpoint first (fast, lightweight).
+ * If it fails, wait 8 seconds and retry once before giving up.
+ * This way the user sees the loading spinner instead of an error.
+ */
+async function warmBackendIfNeeded() {
+  try {
+    const res = await fetch(`${BASE_URL}/`, { method: 'GET' });
+    if (res.ok) return; // already warm
+    // 502 or 503 — server is waking up, wait and retry
+    await new Promise(r => setTimeout(r, 8000));
+    await fetch(`${BASE_URL}/`, { method: 'GET' });
+  } catch {
+    // Network error — also wait and retry
+    await new Promise(r => setTimeout(r, 8000));
+    try { await fetch(`${BASE_URL}/`, { method: 'GET' }); } catch { /* ignore */ }
+  }
+}
 
 export async function callRAG({ extractedText, action, question }) {
-  // This endpoint does NOT require auth (v1 compatible)
+  // Warm the backend before the heavy RAG request
+  await warmBackendIfNeeded();
+
   const response = await fetch(`${BASE_URL}/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ extractedText, action, question }),
   });
+
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error || `Server error (${response.status})`);
   }
+
   return response.json();
 }
 
