@@ -9,3 +9,7 @@ sentence-transformers
 openai
 pypdf
 python-multipart
+boto3
+python-jose[cryptography]
+slowapi
+httpx
