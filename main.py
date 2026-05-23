@@ -9,14 +9,11 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from fastapi import FastAPI, HTTPException, Depends, Request, Response
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 
 import jwt as pyjwt
 import httpx
@@ -27,26 +24,9 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-# ── Rate Limiter ───────────────────────────────────────────────────────────────
-
-limiter = Limiter(key_func=get_remote_address)
-
 # ── App ────────────────────────────────────────────────────────────────────────
 
 app = FastAPI()
-app.state.limiter = limiter
-
-
-# Rate limit exceeded handler — defined manually to avoid import issues
-@app.exception_handler(RateLimitExceeded)
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(
-        status_code=429,
-        content={"error": "Rate limit exceeded. Please slow down."}
-    )
-
-
-# ── CORS ───────────────────────────────────────────────────────────────────────
 
 app.add_middleware(
     CORSMiddleware,
@@ -80,7 +60,7 @@ COGNITO_JWKS_URL = (
 
 _jwks_cache = None
 _jwks_cache_time = 0
-JWKS_CACHE_TTL = 3600  # 1 hour
+JWKS_CACHE_TTL = 3600
 
 
 async def get_jwks():
@@ -102,44 +82,28 @@ security = HTTPBearer()
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
-    """
-    Validates the Cognito JWT from the Authorization header.
-    Returns { sub, email } on success, raises 401 on failure.
-    """
     token = credentials.credentials
     try:
-        # Step 1: decode header only to get the key ID (kid)
         unverified_header = pyjwt.get_unverified_header(token)
         kid = unverified_header.get("kid")
-
-        # Step 2: fetch Cognito's public keys (cached)
         jwks = await get_jwks()
-
-        # Step 3: find the matching public key by kid
         public_key = None
         for key in jwks.get("keys", []):
             if key["kid"] == kid:
-                # Convert JWK to PEM format using PyJWT's built-in helper
                 public_key = pyjwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
                 break
-
         if not public_key:
             raise HTTPException(status_code=401, detail="Invalid token: key not found")
-
-        # Step 4: verify and decode
         payload = pyjwt.decode(
             token,
             public_key,
             algorithms=["RS256"],
             options={"verify_aud": False},
         )
-
         user_sub = payload.get("sub")
         if not user_sub:
             raise HTTPException(status_code=401, detail="Invalid token: missing sub")
-
         return {"sub": user_sub, "email": payload.get("email", "")}
-
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except pyjwt.InvalidTokenError as e:
@@ -175,7 +139,7 @@ class MigrationRequest(BaseModel):
     documents: Optional[List[dict]] = None
 
 
-# ── RAG Helpers ────────────────────────────────────────────────────────────────
+# ── RAG Helpers (lazy-loaded inside route to avoid import-time crash) ──────────
 
 def build_faiss_index(text: str):
     splitter = RecursiveCharacterTextSplitter(
@@ -229,7 +193,6 @@ def db_delete(pk: str, sk: str):
 # ── Existing RAG Route (v1 compatible) ────────────────────────────────────────
 
 @app.post("/")
-@limiter.limit("10/minute")
 async def handle(request: Request, body: RAGRequestBody):
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -314,29 +277,20 @@ Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
 # ── Planner Endpoints ──────────────────────────────────────────────────────────
 
 @app.post("/api/planner/save")
-@limiter.limit("30/minute")
 async def save_planner(
     request: Request,
     body: SavePlannerRequest,
     user=Depends(get_current_user)
 ):
     try:
-        db_put(
-            pk=f"USER#{user['sub']}",
-            sk="PLANNER",
-            data={"planData": body.planData}
-        )
+        db_put(pk=f"USER#{user['sub']}", sk="PLANNER", data={"planData": body.planData})
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/planner/load")
-@limiter.limit("30/minute")
-async def load_planner(
-    request: Request,
-    user=Depends(get_current_user)
-):
+async def load_planner(request: Request, user=Depends(get_current_user)):
     item = db_get(pk=f"USER#{user['sub']}", sk="PLANNER")
     if not item:
         return {"success": True, "planData": None}
@@ -346,7 +300,6 @@ async def load_planner(
 # ── Document Endpoints ─────────────────────────────────────────────────────────
 
 @app.post("/api/documents/save")
-@limiter.limit("20/minute")
 async def save_document(
     request: Request,
     body: SaveDocumentRequest,
@@ -369,11 +322,7 @@ async def save_document(
 
 
 @app.get("/api/documents/list")
-@limiter.limit("30/minute")
-async def list_documents(
-    request: Request,
-    user=Depends(get_current_user)
-):
+async def list_documents(request: Request, user=Depends(get_current_user)):
     items = db_query(pk=f"USER#{user['sub']}", sk_prefix="DOC#")
     docs = [
         {
@@ -388,12 +337,7 @@ async def list_documents(
 
 
 @app.get("/api/documents/{doc_id}")
-@limiter.limit("30/minute")
-async def get_document(
-    request: Request,
-    doc_id: str,
-    user=Depends(get_current_user)
-):
+async def get_document(request: Request, doc_id: str, user=Depends(get_current_user)):
     item = db_get(pk=f"USER#{user['sub']}", sk=f"DOC#{doc_id}")
     if not item:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -401,12 +345,7 @@ async def get_document(
 
 
 @app.delete("/api/documents/{doc_id}")
-@limiter.limit("20/minute")
-async def delete_document(
-    request: Request,
-    doc_id: str,
-    user=Depends(get_current_user)
-):
+async def delete_document(request: Request, doc_id: str, user=Depends(get_current_user)):
     try:
         db_delete(pk=f"USER#{user['sub']}", sk=f"DOC#{doc_id}")
         db_delete(pk=f"USER#{user['sub']}", sk=f"CHAT#DOC#{doc_id}")
@@ -418,7 +357,6 @@ async def delete_document(
 # ── Chat History Endpoints ─────────────────────────────────────────────────────
 
 @app.post("/api/chat/save")
-@limiter.limit("30/minute")
 async def save_chat(
     request: Request,
     body: SaveChatRequest,
@@ -426,18 +364,13 @@ async def save_chat(
 ):
     try:
         sk = f"CHAT#DOC#{body.docId}" if body.docId else "CHAT#GLOBAL"
-        db_put(
-            pk=f"USER#{user['sub']}",
-            sk=sk,
-            data={"messages": body.messages, "docId": body.docId}
-        )
+        db_put(pk=f"USER#{user['sub']}", sk=sk, data={"messages": body.messages, "docId": body.docId})
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/chat/load")
-@limiter.limit("30/minute")
 async def load_chat(
     request: Request,
     doc_id: Optional[str] = None,
@@ -453,22 +386,17 @@ async def load_chat(
 # ── Migration Endpoint ─────────────────────────────────────────────────────────
 
 @app.post("/api/migrate")
-@limiter.limit("5/minute")
 async def migrate_from_localstorage(
     request: Request,
     body: MigrationRequest,
     user=Depends(get_current_user)
 ):
     try:
-        existing_planner = db_get(pk=f"USER#{user['sub']}", sk="PLANNER")
-        if existing_planner:
+        existing = db_get(pk=f"USER#{user['sub']}", sk="PLANNER")
+        if existing:
             return {"success": False, "reason": "Cloud data already exists. Migration skipped."}
         if body.planData:
-            db_put(
-                pk=f"USER#{user['sub']}",
-                sk="PLANNER",
-                data={"planData": body.planData}
-            )
+            db_put(pk=f"USER#{user['sub']}", sk="PLANNER", data={"planData": body.planData})
         return {"success": True, "migrated": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

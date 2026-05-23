@@ -11,5 +11,4 @@ pypdf
 python-multipart
 boto3
 PyJWT[crypto]
-slowapi
 httpx
