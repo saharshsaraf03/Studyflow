@@ -66,11 +66,11 @@ const DailyPlanTable = ({ planData, onUpdateDay, subjectNames }) => {
 
   // Status styling
   const getStatusStyle = (status, date) => {
-    if (status === 'completed') return 'bg-emerald-500/10 text-emerald-400';
-    if (status === 'missed') return 'bg-red-500/10 text-red-400';
-    if (date < today && status === 'pending') return 'bg-amber-500/10 text-amber-400'; // overdue
-    if (date === today) return 'bg-primary-500/10 text-primary-400';
-    return 'text-dark-400';
+    if (status === 'completed') return 'bg-emerald-50 text-emerald-600';
+    if (status === 'missed') return 'bg-red-50 text-red-500';
+    if (date < today && status === 'pending') return 'bg-amber-50 text-amber-600'; // overdue
+    if (date === today) return 'bg-primary-50 text-primary-500';
+    return 'text-surface-400';
   };
 
   const getStatusLabel = (status, date) => {
@@ -88,7 +88,7 @@ const DailyPlanTable = ({ planData, onUpdateDay, subjectNames }) => {
         <div className="flex items-center gap-2">
           <button
             onClick={goToToday}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-50 text-primary-500 hover:bg-primary-100 transition-colors"
           >
             <Calendar className="w-3 h-3 inline mr-1" />
             Today
@@ -99,17 +99,17 @@ const DailyPlanTable = ({ planData, onUpdateDay, subjectNames }) => {
           <button
             onClick={() => setPage(Math.max(0, page - 1))}
             disabled={page === 0}
-            className="p-1.5 rounded-lg text-dark-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-1.5 rounded-lg text-surface-400 hover:text-surface-900 hover:bg-surface-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-xs text-dark-400 min-w-[80px] text-center">
+          <span className="text-xs text-surface-500 min-w-[80px] text-center">
             Week {page + 1} of {totalPages}
           </span>
           <button
             onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
             disabled={page >= totalPages - 1}
-            className="p-1.5 rounded-lg text-dark-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-1.5 rounded-lg text-surface-400 hover:text-surface-900 hover:bg-surface-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -117,11 +117,11 @@ const DailyPlanTable = ({ planData, onUpdateDay, subjectNames }) => {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-white/5">
-        <table className="table-dark min-w-full">
+      <div className="overflow-x-auto rounded-xl border border-surface-200">
+        <table className="sf-table min-w-full">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 min-w-[120px]" style={{ background: 'rgba(15, 23, 42, 0.9)' }}>
+              <th className="sticky left-0 z-10 min-w-[120px] bg-surface-50">
                 Day
               </th>
               <th className="min-w-[80px]">Status</th>
@@ -144,15 +144,15 @@ const DailyPlanTable = ({ planData, onUpdateDay, subjectNames }) => {
               return (
                 <tr 
                   key={day.date}
-                  className={`transition-colors ${isToday ? 'ring-1 ring-primary-500/30' : ''}`}
-                  style={isToday ? { background: 'rgba(20, 184, 166, 0.03)' } : {}}
+                  className={`transition-colors ${isToday ? 'bg-primary-50/50' : ''}`}
+                  style={isToday ? { borderLeft: '3px solid #6C5CE7' } : {}}
                 >
                   {/* Date cell */}
-                  <td className="sticky left-0 z-10 font-medium" style={{ background: isToday ? 'rgba(20, 184, 166, 0.05)' : 'rgba(15, 23, 42, 0.9)' }}>
+                  <td className={`sticky left-0 z-10 font-medium ${isToday ? 'bg-primary-50/80' : 'bg-white'}`}>
                     <div>
-                      <span className="text-dark-200 text-sm">{formatDate(day.date)}</span>
+                      <span className="text-surface-800 text-sm">{formatDate(day.date)}</span>
                       {day.isWeekend && (
-                        <span className="ml-1.5 text-[10px] text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">WE</span>
+                        <span className="ml-1.5 text-[10px] text-primary-500 bg-primary-50 px-1.5 py-0.5 rounded">WE</span>
                       )}
                     </div>
                   </td>
@@ -180,7 +180,7 @@ const DailyPlanTable = ({ planData, onUpdateDay, subjectNames }) => {
                               onKeyDown={handleKeyDown}
                               onBlur={saveEdit}
                               autoFocus
-                              className="w-14 px-2 py-1 rounded text-xs text-center bg-dark-900 border border-primary-500/50 text-white focus:outline-none"
+                              className="w-14 px-2 py-1 rounded text-xs text-center bg-white border border-primary-500 text-surface-900 focus:outline-none focus:ring-2 focus:ring-primary-200"
                               min="0"
                               max="12"
                               step="0.25"
@@ -192,10 +192,10 @@ const DailyPlanTable = ({ planData, onUpdateDay, subjectNames }) => {
                             className="w-full text-left flex items-center gap-1 group/edit"
                             title="Click to edit"
                           >
-                            <span className="text-sm" style={{ color: hours > 0 ? getSubjectColor(subIdx) : '#334155' }}>
+                            <span className="text-sm" style={{ color: hours > 0 ? getSubjectColor(subIdx) : '#D1D5DB' }}>
                               {hours > 0 ? `${hours}h` : '—'}
                             </span>
-                            <Edit3 className="w-3 h-3 text-dark-600 opacity-0 group-hover/edit:opacity-100 transition-opacity" />
+                            <Edit3 className="w-3 h-3 text-surface-300 opacity-0 group-hover/edit:opacity-100 transition-opacity" />
                           </button>
                         )}
                       </td>
@@ -204,7 +204,7 @@ const DailyPlanTable = ({ planData, onUpdateDay, subjectNames }) => {
 
                   {/* Total */}
                   <td>
-                    <span className="text-sm font-medium text-dark-200">
+                    <span className="text-sm font-medium text-surface-800">
                       {Math.round(totalHours * 100) / 100}h
                     </span>
                   </td>

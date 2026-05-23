@@ -108,41 +108,41 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
   };
 
   const difficultyOptions = [
-    { value: 'easy', label: 'Easy', color: 'text-emerald-400' },
-    { value: 'medium', label: 'Medium', color: 'text-amber-400' },
-    { value: 'hard', label: 'Hard', color: 'text-red-400' },
+    { value: 'easy', label: 'Easy', color: 'text-emerald-500' },
+    { value: 'medium', label: 'Medium', color: 'text-amber-500' },
+    { value: 'hard', label: 'Hard', color: 'text-red-500' },
   ];
 
   const syllabusOptions = [
-    { value: 'small', label: 'Small', color: 'text-emerald-400' },
-    { value: 'medium', label: 'Medium', color: 'text-amber-400' },
-    { value: 'large', label: 'Large', color: 'text-red-400' },
+    { value: 'small', label: 'Small', color: 'text-emerald-500' },
+    { value: 'medium', label: 'Medium', color: 'text-amber-500' },
+    { value: 'large', label: 'Large', color: 'text-red-500' },
   ];
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8 animate-fade-in">
       {/* ========== Subject Count ========== */}
-      <div className="glass-card p-6">
+      <div className="sf-card p-6">
         <div className="flex items-center gap-3 mb-4">
-          <GraduationCap className="w-5 h-5 text-primary-400" />
-          <h2 className="text-lg font-semibold text-dark-100">Subjects</h2>
+          <GraduationCap className="w-5 h-5 text-primary-500" />
+          <h2 className="text-lg font-semibold text-surface-900">Subjects</h2>
         </div>
 
         <div className="flex items-center gap-4 mb-6">
-          <label className="text-sm text-dark-300">Number of Subjects:</label>
+          <label className="text-sm text-surface-600">Number of Subjects:</label>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setSubjectCount(Math.max(1, subjectCount - 1))}
-              className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/5 hover:bg-white/10 text-dark-300 hover:text-white transition-all border border-white/5 hover:border-primary-500/30"
+              className="w-9 h-9 rounded-lg flex items-center justify-center bg-surface-50 hover:bg-surface-100 text-surface-600 hover:text-surface-900 transition-all border border-surface-200 hover:border-primary-300"
             >
               <Minus className="w-4 h-4" />
             </button>
-            <span className="w-10 text-center text-lg font-semibold text-dark-100">{subjectCount}</span>
+            <span className="w-10 text-center text-lg font-semibold text-surface-900">{subjectCount}</span>
             <button
               type="button"
               onClick={() => setSubjectCount(Math.min(10, subjectCount + 1))}
-              className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/5 hover:bg-white/10 text-dark-300 hover:text-white transition-all border border-white/5 hover:border-primary-500/30"
+              className="w-9 h-9 rounded-lg flex items-center justify-center bg-surface-50 hover:bg-surface-100 text-surface-600 hover:text-surface-900 transition-all border border-surface-200 hover:border-primary-300"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -154,32 +154,30 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
           {subjects.map((subject, index) => (
             <div
               key={index}
-              className="rounded-xl p-4 sm:p-5 border border-white/5 transition-all duration-300 hover:border-white/10"
-              style={{ background: 'rgba(15, 23, 42, 0.4)' }}
+              className="rounded-xl p-4 sm:p-5 border border-surface-200 transition-all duration-300 hover:border-surface-300 bg-surface-50"
             >
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold" style={{
-                  background: `linear-gradient(135deg, ${['#14b8a6', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#06b6d4', '#f97316', '#a855f7'][index % 10]}, transparent)`,
-                  opacity: 0.8,
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white" style={{
+                  background: `linear-gradient(135deg, ${['#6C5CE7', '#4FACFE', '#00D2A0', '#FECA57', '#FF6B6B', '#22c55e', '#ec4899', '#06b6d4', '#f97316', '#a855f7'][index % 10]}, transparent)`,
                 }}>
                   {index + 1}
                 </div>
-                <span className="text-sm font-medium text-dark-300">Subject {index + 1}</span>
+                <span className="text-sm font-medium text-surface-600">Subject {index + 1}</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Subject Name */}
                 <div>
-                  <label className="block text-xs text-dark-400 mb-1.5 font-medium">Subject Name</label>
+                  <label className="block text-xs text-surface-500 mb-1.5 font-medium">Subject Name</label>
                   <input
                     type="text"
                     value={subject.name}
                     onChange={(e) => updateSubject(index, 'name', e.target.value)}
                     placeholder={`e.g. Mathematics`}
-                    className="input-dark"
+                    className="sf-input"
                   />
                   {errors[`subject_${index}_name`] && (
-                    <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                    <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" />
                       {errors[`subject_${index}_name`]}
                     </p>
@@ -188,11 +186,11 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
 
                 {/* Difficulty */}
                 <div>
-                  <label className="block text-xs text-dark-400 mb-1.5 font-medium">Difficulty</label>
+                  <label className="block text-xs text-surface-500 mb-1.5 font-medium">Difficulty</label>
                   <select
                     value={subject.difficulty}
                     onChange={(e) => updateSubject(index, 'difficulty', e.target.value)}
-                    className="select-dark"
+                    className="sf-select"
                   >
                     {difficultyOptions.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -202,11 +200,11 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
 
                 {/* Syllabus Size */}
                 <div>
-                  <label className="block text-xs text-dark-400 mb-1.5 font-medium">Syllabus Size</label>
+                  <label className="block text-xs text-surface-500 mb-1.5 font-medium">Syllabus Size</label>
                   <select
                     value={subject.syllabusSize}
                     onChange={(e) => updateSubject(index, 'syllabusSize', e.target.value)}
-                    className="select-dark"
+                    className="sf-select"
                   >
                     {syllabusOptions.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -216,16 +214,16 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
 
                 {/* Exam Date */}
                 <div>
-                  <label className="block text-xs text-dark-400 mb-1.5 font-medium">Exam Date</label>
+                  <label className="block text-xs text-surface-500 mb-1.5 font-medium">Exam Date</label>
                   <input
                     type="date"
                     value={subject.examDate}
                     onChange={(e) => updateSubject(index, 'examDate', e.target.value)}
                     min={new Date().toISOString().split('T')[0]}
-                    className="input-dark"
+                    className="sf-input"
                   />
                   {errors[`subject_${index}_examDate`] && (
-                    <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                    <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" />
                       {errors[`subject_${index}_examDate`]}
                     </p>
@@ -238,17 +236,17 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
       </div>
 
       {/* ========== Study Hours ========== */}
-      <div className="glass-card p-6">
+      <div className="sf-card p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Clock className="w-5 h-5 text-blue-400" />
-          <h2 className="text-lg font-semibold text-dark-100">Study Hours</h2>
+          <Clock className="w-5 h-5 text-accent-blue" />
+          <h2 className="text-lg font-semibold text-surface-900">Study Hours</h2>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {/* Weekday Hours */}
           <div>
-            <label className="block text-sm text-dark-300 mb-2 font-medium">
-              <Calendar className="w-4 h-4 inline mr-1.5 text-dark-400" />
+            <label className="block text-sm text-surface-600 mb-2 font-medium">
+              <Calendar className="w-4 h-4 inline mr-1.5 text-surface-400" />
               Weekday Hours (per day)
             </label>
             <div className="flex items-center gap-3">
@@ -275,13 +273,13 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
                     setWeekdayHours(Number(e.target.value));
                     setErrors(prev => { const n = {...prev}; delete n.weekdayHours; return n; });
                   }}
-                  className="input-dark text-center !py-2 !px-2"
+                  className="sf-input text-center !py-2 !px-2"
                 />
               </div>
-              <span className="text-sm text-dark-400">hrs</span>
+              <span className="text-sm text-surface-500">hrs</span>
             </div>
             {errors.weekdayHours && (
-              <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+              <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" /> {errors.weekdayHours}
               </p>
             )}
@@ -289,8 +287,8 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
 
           {/* Weekend Hours */}
           <div>
-            <label className="block text-sm text-dark-300 mb-2 font-medium">
-              <Calendar className="w-4 h-4 inline mr-1.5 text-dark-400" />
+            <label className="block text-sm text-surface-600 mb-2 font-medium">
+              <Calendar className="w-4 h-4 inline mr-1.5 text-surface-400" />
               Weekend Hours (per day)
             </label>
             <div className="flex items-center gap-3">
@@ -317,13 +315,13 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
                     setWeekendHours(Number(e.target.value));
                     setErrors(prev => { const n = {...prev}; delete n.weekendHours; return n; });
                   }}
-                  className="input-dark text-center !py-2 !px-2"
+                  className="sf-input text-center !py-2 !px-2"
                 />
               </div>
-              <span className="text-sm text-dark-400">hrs</span>
+              <span className="text-sm text-surface-500">hrs</span>
             </div>
             {errors.weekendHours && (
-              <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+              <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" /> {errors.weekendHours}
               </p>
             )}
@@ -336,7 +334,7 @@ const FormComponent = ({ onGenerate, isGenerating }) => {
         <button
           type="submit"
           disabled={isGenerating}
-          className="btn-glow flex items-center gap-2 text-base disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-primary flex items-center gap-2 text-base disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isGenerating ? (
             <>

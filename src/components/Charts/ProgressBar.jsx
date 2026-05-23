@@ -9,10 +9,10 @@ const ProgressBar = ({ percentage = 0, label = 'Overall Progress', showLabel = t
   
   // Color based on percentage
   const getColor = (pct) => {
-    if (pct >= 80) return { from: '#22c55e', to: '#14b8a6' };
-    if (pct >= 50) return { from: '#14b8a6', to: '#3b82f6' };
-    if (pct >= 25) return { from: '#f59e0b', to: '#ef4444' };
-    return { from: '#ef4444', to: '#dc2626' };
+    if (pct >= 80) return { from: '#00D2A0', to: '#6C5CE7' };
+    if (pct >= 50) return { from: '#6C5CE7', to: '#4FACFE' };
+    if (pct >= 25) return { from: '#FECA57', to: '#FF6B6B' };
+    return { from: '#FF6B6B', to: '#dc2626' };
   };
   
   const colors = getColor(clampedPercent);
@@ -21,7 +21,7 @@ const ProgressBar = ({ percentage = 0, label = 'Overall Progress', showLabel = t
     <div className="w-full">
       {showLabel && (
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-dark-300 font-medium">{label}</span>
+          <span className="text-sm text-surface-600 font-medium">{label}</span>
           <span className="text-sm font-bold" style={{ color: colors.from }}>
             {clampedPercent}%
           </span>

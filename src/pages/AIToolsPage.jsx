@@ -641,15 +641,15 @@ const AIToolsPage = () => {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{
-              background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)',
+              background: 'linear-gradient(135deg, #6C5CE7, #4FACFE)',
             }}>
               <Sparkles className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-dark-100">
+            <h1 className="text-2xl sm:text-3xl font-bold text-surface-900">
               AI Study Tools
             </h1>
           </div>
-          <p className="text-dark-400 text-sm mt-1">
+          <p className="text-surface-500 text-sm mt-1">
             Upload a PDF of your syllabus or textbook chapter and get an AI-generated study plan and exam summary.
           </p>
         </div>
@@ -702,8 +702,8 @@ const AIToolsPage = () => {
                   onDrop={handleDrop}
                   className={`relative cursor-pointer rounded-2xl border-2 border-dashed p-12 sm:p-16 text-center transition-all duration-300 ${
                     isDragOver
-                      ? 'border-primary-500/50 bg-primary-500/5'
-                      : 'border-white/10 hover:border-white/20 hover:bg-white/[0.02]'
+                      ? 'border-primary-500 bg-primary-50'
+                      : 'border-surface-300 hover:border-surface-400 hover:bg-surface-50'
                   }`}
                 >
                   <input
@@ -715,17 +715,17 @@ const AIToolsPage = () => {
                   />
 
                   <Upload className={`w-12 h-12 mx-auto mb-4 transition-colors duration-300 ${
-                    isDragOver ? 'text-primary-400' : 'text-dark-500'
+                    isDragOver ? 'text-primary-500' : 'text-surface-400'
                   }`} />
                   <p className={`text-lg mb-1 transition-colors duration-300 ${
-                    isDragOver ? 'text-primary-300' : 'text-dark-300'
+                    isDragOver ? 'text-primary-600' : 'text-surface-700'
                   }`}>
                     Drag & drop your PDF here
                   </p>
-                  <p className="text-sm text-dark-500">
+                  <p className="text-sm text-surface-400">
                     or click to browse
                   </p>
-                  <p className="text-xs text-dark-600 mt-3">
+                  <p className="text-xs text-surface-400 mt-3">
                     PDF only • Max 10 MB
                   </p>
                 </div>
@@ -734,19 +734,19 @@ const AIToolsPage = () => {
               {/* File selected preview */}
               {file && (
                 <div className="space-y-5">
-                  <div className="flex items-center gap-4 rounded-xl p-4 border border-white/5" style={{ background: 'rgba(15, 23, 42, 0.4)' }}>
+                  <div className="flex items-center gap-4 rounded-xl p-4 border border-surface-200 bg-surface-50">
                     <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{
-                      background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)',
+                      background: 'linear-gradient(135deg, #6C5CE7, #4FACFE)',
                     }}>
                       <FileText className="w-5 h-5 text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-dark-200 font-medium truncate">{fileName}</p>
-                      <p className="text-xs text-dark-500">{formatFileSize(fileSize)}</p>
+                      <p className="text-sm text-surface-800 font-medium truncate">{fileName}</p>
+                      <p className="text-xs text-surface-400">{formatFileSize(fileSize)}</p>
                     </div>
                     <button
                       onClick={clearFile}
-                      className="p-2 rounded-lg text-dark-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                      className="p-2 rounded-lg text-surface-400 hover:text-red-500 hover:bg-red-50 transition-all"
                       title="Remove file"
                     >
                       <X className="w-4 h-4" />
@@ -771,7 +771,7 @@ const AIToolsPage = () => {
                 }}>
                   <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm text-red-300">{error}</p>
+                    <p className="text-sm text-red-600">{error}</p>
                     {file && (
                       <button
                         onClick={handleGenerate}
@@ -798,10 +798,10 @@ const AIToolsPage = () => {
                 <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-primary-400 animate-spin" />
                 <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-primary-400 animate-pulse" />
               </div>
-              <p className="text-lg text-dark-200 font-medium mb-2 transition-all duration-500">
+              <p className="text-lg text-surface-800 font-medium mb-2 transition-all duration-500">
                 {loadingMessage}
               </p>
-              <p className="text-sm text-dark-500">
+              <p className="text-sm text-surface-400">
                 This may take 15–30 seconds
               </p>
             </div>
@@ -815,8 +815,8 @@ const AIToolsPage = () => {
           <div className="animate-fade-in">
             <div className="glass-card p-8 text-center">
               <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-              <p className="text-dark-200 font-medium mb-2">Something went wrong</p>
-              <p className="text-sm text-dark-400 mb-6">{error}</p>
+              <p className="text-surface-800 font-medium mb-2">Something went wrong</p>
+              <p className="text-sm text-surface-500 mb-6">{error}</p>
               <button onClick={resetAll} className="btn-glow inline-flex items-center gap-2">
                 <RefreshCw className="w-4 h-4" />
                 Try Again
@@ -842,8 +842,8 @@ const AIToolsPage = () => {
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
                     activeTab === tab.id
-                      ? 'text-primary-400 bg-primary-500/10 border border-primary-500/20'
-                      : 'text-dark-400 hover:text-dark-200 hover:bg-white/5 border border-transparent'
+                      ? 'text-white bg-primary-500 shadow-md'
+                      : 'text-surface-500 hover:text-surface-800 hover:bg-white border border-transparent hover:border-surface-200'
                   }`}
                 >
                   <tab.icon className="w-4 h-4" />
@@ -857,13 +857,13 @@ const AIToolsPage = () => {
               <div className="animate-fade-in space-y-6">
                 {/* Plan header */}
                 <div className="glass-card p-5">
-                  <h2 className="text-lg font-semibold text-dark-100 mb-1">
+                  <h2 className="text-lg font-semibold text-surface-900 mb-1">
                     {studyPlan.title || 'Study Plan'}
                   </h2>
                   {studyPlan.totalEstimatedHours && (
-                    <div className="flex items-center gap-2 text-sm text-dark-400">
-                      <Clock className="w-4 h-4 text-primary-400" />
-                      Total Estimated: <span className="text-primary-400 font-semibold">{studyPlan.totalEstimatedHours} hours</span>
+                    <div className="flex items-center gap-2 text-sm text-surface-500">
+                      <Clock className="w-4 h-4 text-primary-500" />
+                      Total Estimated: <span className="text-primary-500 font-semibold">{studyPlan.totalEstimatedHours} hours</span>
                     </div>
                   )}
                 </div>
@@ -878,14 +878,14 @@ const AIToolsPage = () => {
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
                           style={{
                             background: `linear-gradient(135deg, ${
-                              ['#14b8a6', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#06b6d4', '#f97316', '#a855f7'][index % 10]
+                              ['#6C5CE7', '#4FACFE', '#00D2A0', '#FECA57', '#FF6B6B', '#22c55e', '#ec4899', '#06b6d4', '#f97316', '#a855f7'][index % 10]
                             }, transparent)`,
                           }}
                         >
                           {topic.order || index + 1}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-dark-100 font-semibold text-sm">
+                          <h3 className="text-surface-900 font-semibold text-sm">
                             {topic.name}
                           </h3>
                           <div className="flex items-center gap-3 mt-1.5 flex-wrap">
@@ -898,7 +898,7 @@ const AIToolsPage = () => {
                               </span>
                             )}
                             {topic.estimatedHours != null && (
-                              <span className="flex items-center gap-1 text-xs text-dark-400">
+                              <span className="flex items-center gap-1 text-xs text-surface-500">
                                 <Clock className="w-3 h-3" />
                                 {topic.estimatedHours}h
                               </span>
@@ -911,7 +911,7 @@ const AIToolsPage = () => {
                       {topic.keyPoints?.length > 0 && (
                         <ul className="space-y-1 pl-1">
                           {topic.keyPoints.map((point, pIdx) => (
-                            <li key={pIdx} className="flex items-start gap-2 text-sm text-dark-400">
+                            <li key={pIdx} className="flex items-start gap-2 text-sm text-surface-500">
                               <span className="text-primary-500 mt-1.5 flex-shrink-0">•</span>
                               <span>{point}</span>
                             </li>
@@ -928,7 +928,7 @@ const AIToolsPage = () => {
             {activeTab === 'plan' && !studyPlan && (
               <div className="glass-card p-8 text-center animate-fade-in">
                 <Target className="w-10 h-10 text-dark-500 mx-auto mb-3" />
-                <p className="text-dark-400 text-sm">No study plan data was returned.</p>
+                <p className="text-surface-500 text-sm">No study plan data was returned.</p>
               </div>
             )}
 
@@ -937,7 +937,7 @@ const AIToolsPage = () => {
               <div className="animate-fade-in space-y-6">
                 {/* Summary header */}
                 <div className="glass-card p-5">
-                  <h2 className="text-lg font-semibold text-dark-100">
+                  <h2 className="text-lg font-semibold text-surface-900">
                     {examSummary.title || 'Exam Summary'}
                   </h2>
                 </div>
@@ -945,13 +945,13 @@ const AIToolsPage = () => {
                 {/* Sections */}
                 {(examSummary.sections || []).map((section, sIdx) => (
                   <div key={sIdx} className="glass-card p-5 space-y-4">
-                    <h3 className="text-lg font-semibold text-dark-100">
+                    <h3 className="text-lg font-semibold text-surface-900">
                       {section.heading}
                     </h3>
 
                     {/* Content paragraph */}
                     {section.content && (
-                      <p className="text-sm text-dark-300 leading-relaxed">
+                      <p className="text-sm text-surface-600 leading-relaxed">
                         {section.content}
                       </p>
                     )}
@@ -959,12 +959,12 @@ const AIToolsPage = () => {
                     {/* Key terms */}
                     {section.keyTerms?.length > 0 && (
                       <div>
-                        <p className="text-xs text-dark-500 uppercase tracking-wider mb-2 font-medium">Key Terms</p>
+                        <p className="text-xs text-surface-400 uppercase tracking-wider mb-2 font-medium">Key Terms</p>
                         <div className="flex flex-wrap gap-2">
                           {section.keyTerms.map((term, tIdx) => (
                             <span
                               key={tIdx}
-                              className="bg-primary-500/10 text-primary-400 px-2 py-0.5 rounded-full text-xs"
+                              className="bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full text-xs"
                             >
                               {term}
                             </span>
@@ -982,7 +982,7 @@ const AIToolsPage = () => {
                         <p className="text-xs text-blue-400 uppercase tracking-wider mb-2 font-medium">Important Formulas</p>
                         <div className="space-y-1">
                           {section.importantFormulas.map((formula, fIdx) => (
-                            <p key={fIdx} className="text-sm text-dark-200 font-mono">
+                            <p key={fIdx} className="text-sm text-surface-800 font-mono">
                               {formula}
                             </p>
                           ))}
@@ -1002,7 +1002,7 @@ const AIToolsPage = () => {
                         </div>
                         <ul className="space-y-1">
                           {section.examTips.map((tip, tipIdx) => (
-                            <li key={tipIdx} className="flex items-start gap-2 text-sm text-dark-300">
+                            <li key={tipIdx} className="flex items-start gap-2 text-sm text-surface-600">
                               <span className="text-amber-500 mt-1 flex-shrink-0">•</span>
                               <span>{tip}</span>
                             </li>
@@ -1019,7 +1019,7 @@ const AIToolsPage = () => {
             {activeTab === 'summary' && !examSummary && (
               <div className="glass-card p-8 text-center animate-fade-in">
                 <FileText className="w-10 h-10 text-dark-500 mx-auto mb-3" />
-                <p className="text-dark-400 text-sm">No exam summary data was returned.</p>
+                <p className="text-surface-500 text-sm">No exam summary data was returned.</p>
               </div>
             )}
           </div>
@@ -1033,14 +1033,13 @@ const AIToolsPage = () => {
             <div className="glass-card p-5 space-y-4">
               <div className="flex items-center gap-2 mb-2">
                 <BookOpen className="w-5 h-5 text-amber-400" />
-                <h2 className="text-lg font-semibold text-dark-100">AI Response</h2>
+                <h2 className="text-lg font-semibold text-surface-900">AI Response</h2>
               </div>
-              <p className="text-xs text-dark-500 mb-2">
+              <p className="text-xs text-surface-400 mb-2">
                 The AI returned an unstructured response. Here is the raw output:
               </p>
               <div
-                className="rounded-xl p-4 text-sm text-dark-300 leading-relaxed whitespace-pre-wrap"
-                style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(148, 163, 184, 0.1)' }}
+                className="rounded-xl p-4 text-sm text-surface-700 leading-relaxed whitespace-pre-wrap bg-surface-50 border border-surface-200"
               >
                 {rawText}
               </div>
@@ -1057,9 +1056,9 @@ const AIToolsPage = () => {
               {/* Chat header */}
               <div className="flex items-center gap-2 mb-1">
                 <MessageCircle className="w-5 h-5 text-primary-400" />
-                <h2 className="text-lg font-semibold text-dark-100">Chat with your PDF</h2>
+                <h2 className="text-lg font-semibold text-surface-900">Chat with your PDF</h2>
               </div>
-              <p className="text-xs text-dark-500 mb-4">Ask questions about your study material</p>
+              <p className="text-xs text-surface-400 mb-4">Ask questions about your study material</p>
 
               {/* Messages area */}
               <div
@@ -1073,7 +1072,7 @@ const AIToolsPage = () => {
                       <button
                         key={idx}
                         onClick={() => handleSendChat(q)}
-                        className="bg-white/5 border border-white/10 text-dark-400 text-xs px-3 py-1.5 rounded-full hover:bg-primary-500/10 hover:text-primary-400 hover:border-primary-500/30 cursor-pointer transition-all"
+                        className="bg-surface-50 border border-surface-200 text-surface-500 text-xs px-3 py-1.5 rounded-full hover:bg-primary-50 hover:text-primary-500 hover:border-primary-200 cursor-pointer transition-all"
                       >
                         {q}
                       </button>
@@ -1089,20 +1088,20 @@ const AIToolsPage = () => {
                       msg.role === 'user' ? 'items-end' : 'items-start'
                     }`}
                   >
-                    <span className="text-xs text-dark-500 mb-1 px-1">
+                    <span className="text-xs text-surface-400 mb-1 px-1">
                       {msg.role === 'user' ? 'You' : msg.role === 'error' ? 'Error' : 'AI'}
                     </span>
                     <div
                       className={`max-w-[85%] sm:max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
                         msg.role === 'user'
-                          ? 'bg-primary-500/20 border border-primary-500/30 rounded-2xl rounded-tr-sm text-dark-100'
+                          ? 'bg-primary-50 border border-primary-200 rounded-2xl rounded-tr-sm text-surface-900'
                           : msg.role === 'error'
-                            ? 'bg-red-500/10 border border-red-500/20 rounded-2xl rounded-tl-sm text-red-300'
-                            : 'rounded-2xl rounded-tl-sm text-dark-200'
+                            ? 'bg-red-50 border border-red-200 rounded-2xl rounded-tl-sm text-red-600'
+                            : 'rounded-2xl rounded-tl-sm text-surface-800'
                       }`}
                       style={
                         msg.role === 'ai'
-                          ? { background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)' }
+                          ? { background: '#F9FAFB', border: '1px solid #E5E7EB' }
                           : undefined
                       }
                     >
@@ -1114,10 +1113,9 @@ const AIToolsPage = () => {
                 {/* Typing indicator */}
                 {isChatLoading && (
                   <div className="flex flex-col items-start">
-                    <span className="text-xs text-dark-500 mb-1 px-1">AI</span>
+                    <span className="text-xs text-surface-400 mb-1 px-1">AI</span>
                     <div
-                      className="px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-1.5"
-                      style={{ background: 'rgba(30, 41, 59, 0.7)', border: '1px solid rgba(255,255,255,0.05)' }}
+                      className="px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-1.5 bg-surface-50 border border-surface-200"
                     >
                       <div className="w-2 h-2 rounded-full bg-primary-400 animate-pulse" style={{ animationDelay: '0ms' }} />
                       <div className="w-2 h-2 rounded-full bg-primary-400 animate-pulse" style={{ animationDelay: '300ms' }} />

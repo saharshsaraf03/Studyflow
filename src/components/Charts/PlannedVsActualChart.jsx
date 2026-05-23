@@ -16,8 +16,8 @@ const PlannedVsActualChart = ({ data }) => {
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
-        <div className="glass-card px-3 py-2 text-xs space-y-1">
-          <p className="text-dark-200 font-medium">{label}</p>
+        <div className="sf-card px-3 py-2 text-xs space-y-1">
+          <p className="text-surface-800 font-medium">{label}</p>
           {payload.map((entry, i) => (
             <p key={i} style={{ color: entry.color }}>
               {entry.name}: {entry.value} hrs
@@ -35,26 +35,26 @@ const PlannedVsActualChart = ({ data }) => {
         <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>
             <linearGradient id="plannedGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
+              <stop offset="5%" stopColor="#6C5CE7" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="#6C5CE7" stopOpacity={0} />
             </linearGradient>
             <linearGradient id="actualGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+              <stop offset="5%" stopColor="#00D2A0" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="#00D2A0" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.08)" />
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(229, 231, 235, 0.8)" />
           <XAxis 
             dataKey="label" 
-            tick={{ fill: '#64748b', fontSize: 10 }}
+            tick={{ fill: '#9CA3AF', fontSize: 10 }}
             tickLine={false}
-            axisLine={{ stroke: 'rgba(148, 163, 184, 0.1)' }}
+            axisLine={{ stroke: '#E5E7EB' }}
             interval={'preserveStartEnd'}
           />
           <YAxis 
-            tick={{ fill: '#64748b', fontSize: 10 }}
+            tick={{ fill: '#9CA3AF', fontSize: 10 }}
             tickLine={false}
-            axisLine={{ stroke: 'rgba(148, 163, 184, 0.1)' }}
+            axisLine={{ stroke: '#E5E7EB' }}
           />
           <Tooltip content={<CustomTooltip />} />
           
@@ -62,33 +62,33 @@ const PlannedVsActualChart = ({ data }) => {
             type="monotone"
             dataKey="planned"
             name="Planned"
-            stroke="#14b8a6"
+            stroke="#6C5CE7"
             fill="url(#plannedGrad)"
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 4, stroke: '#14b8a6', strokeWidth: 2, fill: '#0f172a' }}
+            activeDot={{ r: 4, stroke: '#6C5CE7', strokeWidth: 2, fill: '#FFFFFF' }}
           />
           <Area
             type="monotone"
             dataKey="actual"
             name="Actual"
-            stroke="#3b82f6"
+            stroke="#00D2A0"
             fill="url(#actualGrad)"
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 4, stroke: '#3b82f6', strokeWidth: 2, fill: '#0f172a' }}
+            activeDot={{ r: 4, stroke: '#00D2A0', strokeWidth: 2, fill: '#FFFFFF' }}
           />
         </AreaChart>
       </ResponsiveContainer>
       
       {/* Legend */}
       <div className="flex justify-center gap-6 mt-2">
-        <div className="flex items-center gap-1.5 text-xs text-dark-400">
+        <div className="flex items-center gap-1.5 text-xs text-surface-500">
           <div className="w-3 h-0.5 bg-primary-500 rounded" />
           Planned
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-dark-400">
-          <div className="w-3 h-0.5 bg-blue-500 rounded" />
+        <div className="flex items-center gap-1.5 text-xs text-surface-500">
+          <div className="w-3 h-0.5 rounded" style={{ background: '#00D2A0' }} />
           Actual
         </div>
       </div>

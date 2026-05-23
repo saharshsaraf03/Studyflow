@@ -4,36 +4,41 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: 'class',
   theme: {
     extend: {
       colors: {
         primary: {
-          50: '#f0fdfa',
-          100: '#ccfbf1',
-          200: '#99f6e4',
-          300: '#5eead4',
-          400: '#2dd4bf',
-          500: '#14b8a6',
-          600: '#0d9488',
-          700: '#0f766e',
-          800: '#115e59',
-          900: '#134e4a',
-          950: '#042f2e',
+          50: '#F3F1FE',
+          100: '#E8E4FD',
+          200: '#D1C9FB',
+          300: '#B0A1F7',
+          400: '#8B7CF2',
+          500: '#6C5CE7',
+          600: '#5B4ED4',
+          700: '#4A3FB8',
+          800: '#3D3499',
+          900: '#332C7E',
+          950: '#1E1A4D',
         },
-        dark: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617',
-        }
+        accent: {
+          green: '#00D2A0',
+          red: '#FF6B6B',
+          blue: '#4FACFE',
+          yellow: '#FECA57',
+        },
+        surface: {
+          50: '#F5F5F7',
+          100: '#EEEEF0',
+          200: '#E5E7EB',
+          300: '#D1D5DB',
+          400: '#9CA3AF',
+          500: '#6B7280',
+          600: '#4B5563',
+          700: '#374151',
+          800: '#1F2937',
+          900: '#1A1D2E',
+          950: '#12141F',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
@@ -44,6 +49,8 @@ export default {
         'slide-up': 'slideUp 0.5s ease-out',
         'fade-in': 'fadeIn 0.5s ease-out',
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'hover-lift': 'hoverLift 0.3s ease',
+        'pulse-ring': 'pulseRing 2s ease-out infinite',
       },
       keyframes: {
         float: {
@@ -51,8 +58,8 @@ export default {
           '50%': { transform: 'translateY(-20px)' },
         },
         glow: {
-          '0%': { boxShadow: '0 0 5px rgba(20, 184, 166, 0.5), 0 0 10px rgba(20, 184, 166, 0.3)' },
-          '100%': { boxShadow: '0 0 20px rgba(20, 184, 166, 0.8), 0 0 30px rgba(20, 184, 166, 0.4)' },
+          '0%': { boxShadow: '0 0 5px rgba(108, 92, 231, 0.5), 0 0 10px rgba(108, 92, 231, 0.3)' },
+          '100%': { boxShadow: '0 0 20px rgba(108, 92, 231, 0.8), 0 0 30px rgba(108, 92, 231, 0.4)' },
         },
         slideUp: {
           '0%': { transform: 'translateY(20px)', opacity: '0' },
@@ -61,6 +68,14 @@ export default {
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
+        },
+        hoverLift: {
+          '0%': { transform: 'translateY(0)', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' },
+          '100%': { transform: 'translateY(-2px)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' },
+        },
+        pulseRing: {
+          '0%': { transform: 'scale(1)', opacity: '0.5' },
+          '100%': { transform: 'scale(1.5)', opacity: '0' },
         },
       },
       backgroundImage: {

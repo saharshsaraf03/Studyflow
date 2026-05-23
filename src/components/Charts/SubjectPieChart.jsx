@@ -27,8 +27,8 @@ const SubjectPieChart = ({ planned, actual }) => {
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       return (
-        <div className="glass-card px-3 py-2 text-xs">
-          <p className="text-dark-200 font-medium">{payload[0].name}</p>
+        <div className="sf-card px-3 py-2 text-xs">
+          <p className="text-surface-800 font-medium">{payload[0].name}</p>
           <p style={{ color: payload[0].payload.fill }}>
             {payload[0].value} hours
           </p>
@@ -47,7 +47,7 @@ const SubjectPieChart = ({ planned, actual }) => {
     if (value < 1) return null;
     
     return (
-      <text x={x} y={y} fill="#94a3b8" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={11}>
+      <text x={x} y={y} fill="#6B7280" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={11}>
         {name}
       </text>
     );
@@ -98,13 +98,13 @@ const SubjectPieChart = ({ planned, actual }) => {
       {/* Legend */}
       <div className="flex flex-wrap justify-center gap-3 mt-2">
         {plannedData.map((entry, i) => (
-          <div key={i} className="flex items-center gap-1.5 text-xs text-dark-400">
+          <div key={i} className="flex items-center gap-1.5 text-xs text-surface-500">
             <div className="w-2.5 h-2.5 rounded-full" style={{ background: entry.fill }} />
             {entry.name}
           </div>
         ))}
       </div>
-      <div className="flex justify-center gap-4 mt-2 text-[10px] text-dark-500">
+      <div className="flex justify-center gap-4 mt-2 text-[10px] text-surface-400">
         <span>◯ Outer = Planned</span>
         {actualData.length > 0 && <span>● Inner = Actual</span>}
       </div>

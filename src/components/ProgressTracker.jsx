@@ -98,11 +98,11 @@ const ProgressTracker = ({ planData, onUpdatePlan, subjectNames }) => {
     <div className="space-y-5">
       {/* Day selector */}
       <div>
-        <label className="block text-xs text-dark-400 mb-1.5 font-medium">Select Day</label>
+        <label className="block text-xs text-surface-500 mb-1.5 font-medium">Select Day</label>
         <select
           value={selectedDayIndex}
           onChange={(e) => setSelectedDayIndex(Number(e.target.value))}
-          className="select-dark"
+          className="sf-select"
         >
           {plan.map((day, index) => (
             <option key={day.date} value={index}>
@@ -116,27 +116,27 @@ const ProgressTracker = ({ planData, onUpdatePlan, subjectNames }) => {
 
       {/* Planned vs Actual summary */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(20, 184, 166, 0.08)', border: '1px solid rgba(20, 184, 166, 0.15)' }}>
-          <div className="text-xs text-dark-400 mb-1">Planned</div>
-          <div className="text-lg font-bold text-primary-400">{Math.round(plannedTotal * 100) / 100}h</div>
+        <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(108, 92, 231, 0.06)', border: '1px solid rgba(108, 92, 231, 0.12)' }}>
+          <div className="text-xs text-surface-500 mb-1">Planned</div>
+          <div className="text-lg font-bold text-primary-500">{Math.round(plannedTotal * 100) / 100}h</div>
         </div>
-        <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.15)' }}>
-          <div className="text-xs text-dark-400 mb-1">Actual</div>
-          <div className="text-lg font-bold text-blue-400">{Math.round(actualTotal * 100) / 100}h</div>
+        <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(79, 172, 254, 0.06)', border: '1px solid rgba(79, 172, 254, 0.12)' }}>
+          <div className="text-xs text-surface-500 mb-1">Actual</div>
+          <div className="text-lg font-bold text-accent-blue">{Math.round(actualTotal * 100) / 100}h</div>
         </div>
       </div>
 
       {/* Subject inputs */}
       <div className="space-y-3">
-        <label className="block text-xs text-dark-400 font-medium">Hours Studied Per Subject</label>
+        <label className="block text-xs text-surface-500 font-medium">Hours Studied Per Subject</label>
         {subjectNames.map((name, i) => {
           const planned = selectedDay.subjects[name] || 0;
           return (
             <div key={name} className="flex items-center gap-3">
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: getSubjectColor(i) }} />
-                <span className="text-sm text-dark-300 truncate">{name}</span>
-                <span className="text-[10px] text-dark-500 flex-shrink-0">({planned}h planned)</span>
+                <span className="text-sm text-surface-700 truncate">{name}</span>
+                <span className="text-[10px] text-surface-400 flex-shrink-0">({planned}h planned)</span>
               </div>
               <input
                 type="number"
@@ -151,7 +151,7 @@ const ProgressTracker = ({ planData, onUpdatePlan, subjectNames }) => {
                   }));
                   setSaved(false);
                 }}
-                className="w-20 input-dark text-center !py-2"
+                className="w-20 sf-input text-center !py-2"
               />
             </div>
           );
@@ -162,7 +162,7 @@ const ProgressTracker = ({ planData, onUpdatePlan, subjectNames }) => {
       <div className="flex flex-col gap-2">
         <button
           onClick={() => handleSave('completed')}
-          className="btn-glow flex items-center justify-center gap-2 text-sm w-full"
+          className="btn-primary flex items-center justify-center gap-2 text-sm w-full"
         >
           {saved ? (
             <>
@@ -178,14 +178,14 @@ const ProgressTracker = ({ planData, onUpdatePlan, subjectNames }) => {
         <div className="flex gap-2">
           <button
             onClick={handleMarkMissed}
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 transition-all duration-300 text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20"
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 transition-all duration-300 text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100"
           >
             <SkipForward className="w-3.5 h-3.5" />
             Mark Missed
           </button>
           <button
             onClick={handleReset}
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 transition-all duration-300 text-dark-400 bg-white/5 border border-white/5 hover:bg-white/10"
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 transition-all duration-300 text-surface-500 bg-surface-50 border border-surface-200 hover:bg-surface-100"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Reset Day

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Navbar from './components/Navbar';
+import Sidebar from './components/Sidebar';
 import HomePage from './pages/HomePage';
 import SetupPage from './pages/SetupPage';
 import DashboardPage from './pages/DashboardPage';
@@ -14,50 +14,51 @@ import { loadData, saveData } from './utils/storage';
  */
 function App() {
   const [planData, setPlanData] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Load saved data on mount
   useEffect(() => {
     const saved = loadData();
-    if (saved) {
-      setPlanData(saved);
-    }
+    if (saved) setPlanData(saved);
   }, []);
 
   // Persist to localStorage whenever planData changes
   useEffect(() => {
-    if (planData) {
-      saveData(planData);
-    }
+    if (planData) saveData(planData);
   }, [planData]);
 
   return (
     <Router>
-      <div className="min-h-screen bg-dark-900 text-dark-50 relative overflow-hidden">
-        {/* Background gradient orbs for ambient lighting */}
-        <div className="fixed inset-0 pointer-events-none z-0">
-          <div className="bg-orb w-[600px] h-[600px] bg-primary-500 top-[-200px] left-[-200px]" style={{ position: 'absolute' }} />
-          <div className="bg-orb w-[500px] h-[500px] bg-blue-500 bottom-[-150px] right-[-150px]" style={{ position: 'absolute' }} />
-          <div className="bg-orb w-[400px] h-[400px] bg-purple-500 top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%]" style={{ position: 'absolute', opacity: 0.05 }} />
-        </div>
+      <div className="min-h-screen bg-surface-50 text-surface-900 flex">
+        {/* Sidebar */}
+        <Sidebar
+          hasPlan={!!planData}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
 
         {/* Main content */}
-        <div className="relative z-10">
-          <Navbar hasPlan={!!planData} />
-          <Routes>
-            <Route path="/" element={<HomePage hasPlan={!!planData} />} />
-            <Route path="/setup" element={<SetupPage setPlanData={setPlanData} />} />
-            <Route path="/ai-tools" element={<AIToolsPage />} />
-            <Route 
-              path="/dashboard" 
-              element={
-                <DashboardPage 
-                  planData={planData} 
-                  setPlanData={setPlanData} 
-                />
-              } 
-            />
-          </Routes>
-        </div>
+        <main className="flex-1 min-h-screen md:ml-[240px]">
+          {/* Mobile header */}
+          <div className="md:hidden flex items-center justify-between px-4 h-14 bg-white border-b border-surface-200">
+            <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-surface-100">
+              <svg className="w-5 h-5 text-surface-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <span className="text-base font-bold gradient-text">StudyFlow</span>
+            <div className="w-9" /> {/* Spacer for centering */}
+          </div>
+
+          <div className="p-4 sm:p-6 lg:p-8">
+            <Routes>
+              <Route path="/" element={<HomePage hasPlan={!!planData} />} />
+              <Route path="/setup" element={<SetupPage setPlanData={setPlanData} />} />
+              <Route path="/ai-tools" element={<AIToolsPage />} />
+              <Route path="/dashboard" element={<DashboardPage planData={planData} setPlanData={setPlanData} />} />
+            </Routes>
+          </div>
+        </main>
       </div>
     </Router>
   );

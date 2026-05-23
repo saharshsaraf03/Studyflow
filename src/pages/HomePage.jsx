@@ -15,7 +15,7 @@ const HomePage = ({ hasPlan }) => {
       icon: Brain,
       title: 'Adaptive Scheduling',
       description: 'Smart algorithms distribute study hours based on difficulty, syllabus size, and exam urgency.',
-      gradient: 'from-primary-500 to-cyan-400',
+      gradient: 'from-primary-500 to-primary-300',
     },
     {
       icon: TrendingUp,
@@ -46,19 +46,19 @@ const HomePage = ({ hasPlan }) => {
   return (
     <div className="min-h-[calc(100vh-4rem)]">
       {/* ========== HERO SECTION ========== */}
-      <section className="relative px-4 pt-20 pb-28 sm:pt-28 sm:pb-36 overflow-hidden">
-        {/* Animated gradient ring behind hero */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full opacity-[0.07] animate-pulse-slow" style={{
-          background: 'conic-gradient(from 0deg, #14b8a6, #3b82f6, #8b5cf6, #14b8a6)',
+      <section className="relative px-4 pt-16 pb-24 sm:pt-24 sm:pb-32 overflow-hidden">
+        {/* Subtle gradient background */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full opacity-[0.05] animate-pulse-slow" style={{
+          background: 'conic-gradient(from 0deg, #6C5CE7, #4FACFE, #00D2A0, #6C5CE7)',
           filter: 'blur(60px)',
         }} />
 
         <div className="max-w-4xl mx-auto text-center relative z-10">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium mb-8 animate-fade-in" style={{
-            background: 'rgba(20, 184, 166, 0.1)',
-            border: '1px solid rgba(20, 184, 166, 0.2)',
-            color: '#14b8a6',
+            background: 'rgba(108, 92, 231, 0.08)',
+            border: '1px solid rgba(108, 92, 231, 0.15)',
+            color: '#6C5CE7',
           }}>
             <Sparkles className="w-3.5 h-3.5" />
             AI-Powered Study Planning
@@ -66,13 +66,13 @@ const HomePage = ({ hasPlan }) => {
 
           {/* Hero heading */}
           <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black leading-[1.1] mb-6 animate-slide-up">
-            <span className="text-dark-100">Smart Study</span>
+            <span className="text-surface-900">Smart Study</span>
             <br />
             <span className="gradient-text">Planner</span>
           </h1>
 
           {/* Description */}
-          <p className="text-base sm:text-lg text-dark-400 max-w-2xl mx-auto mb-10 leading-relaxed animate-slide-up" style={{ animationDelay: '0.1s' }}>
+          <p className="text-base sm:text-lg text-surface-500 max-w-2xl mx-auto mb-10 leading-relaxed animate-slide-up" style={{ animationDelay: '0.1s' }}>
             Create personalized study schedules powered by intelligent algorithms. 
             Balance difficulty, urgency, and your available time — then track your progress 
             with beautiful visual dashboards.
@@ -80,7 +80,7 @@ const HomePage = ({ hasPlan }) => {
 
           {/* CTA buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-            <Link to="/setup" className="btn-glow flex items-center gap-2 text-base group">
+            <Link to="/setup" className="btn-primary flex items-center gap-2 text-base group">
               <Target className="w-5 h-5" />
               Create Your Plan
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -102,7 +102,7 @@ const HomePage = ({ hasPlan }) => {
             ].map((stat, i) => (
               <div key={i} className="text-center">
                 <div className="text-lg sm:text-xl font-bold gradient-text">{stat.value}</div>
-                <div className="text-xs text-dark-500">{stat.label}</div>
+                <div className="text-xs text-surface-400">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -115,17 +115,17 @@ const HomePage = ({ hasPlan }) => {
           {/* Section header */}
           <div className="text-center mb-16">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium mb-4" style={{
-              background: 'rgba(59, 130, 246, 0.1)',
-              border: '1px solid rgba(59, 130, 246, 0.2)',
-              color: '#3b82f6',
+              background: 'rgba(79, 172, 254, 0.08)',
+              border: '1px solid rgba(79, 172, 254, 0.15)',
+              color: '#4FACFE',
             }}>
               <Zap className="w-3 h-3" />
               Features
             </div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-dark-100 mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold text-surface-900 mb-4">
               Everything You Need to <span className="gradient-text">Ace Your Exams</span>
             </h2>
-            <p className="text-dark-400 max-w-xl mx-auto">
+            <p className="text-surface-500 max-w-xl mx-auto">
               A comprehensive toolkit designed to optimize your study routine and maximize results.
             </p>
           </div>
@@ -135,7 +135,7 @@ const HomePage = ({ hasPlan }) => {
             {features.map((feature, index) => (
               <div
                 key={index}
-                className="glass-card-hover p-6 group"
+                className="sf-card-hover p-6 group"
                 style={{ animationDelay: `${index * 0.1}s` }}
               >
                 {/* Icon */}
@@ -144,10 +144,10 @@ const HomePage = ({ hasPlan }) => {
                 </div>
 
                 {/* Content */}
-                <h3 className="text-lg font-semibold text-dark-100 mb-2">
+                <h3 className="text-lg font-semibold text-surface-900 mb-2">
                   {feature.title}
                 </h3>
-                <p className="text-sm text-dark-400 leading-relaxed">
+                <p className="text-sm text-surface-500 leading-relaxed">
                   {feature.description}
                 </p>
               </div>
@@ -160,7 +160,7 @@ const HomePage = ({ hasPlan }) => {
       <section className="px-4 py-20">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-dark-100 mb-4">
+            <h2 className="text-3xl sm:text-4xl font-bold text-surface-900 mb-4">
               How It <span className="gradient-text">Works</span>
             </h2>
           </div>
@@ -173,12 +173,12 @@ const HomePage = ({ hasPlan }) => {
             ].map((item, i) => (
               <div key={i} className="text-center group">
                 <div className="relative inline-flex mb-6">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center glass-card group-hover:border-primary-500/30 transition-all duration-300">
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center sf-card group-hover:border-primary-500/30 transition-all duration-300">
                     <span className="text-2xl font-black gradient-text">{item.step}</span>
                   </div>
                 </div>
-                <h3 className="text-lg font-semibold text-dark-100 mb-2">{item.title}</h3>
-                <p className="text-sm text-dark-400">{item.desc}</p>
+                <h3 className="text-lg font-semibold text-surface-900 mb-2">{item.title}</h3>
+                <p className="text-sm text-surface-500">{item.desc}</p>
               </div>
             ))}
           </div>
@@ -188,15 +188,15 @@ const HomePage = ({ hasPlan }) => {
       {/* ========== FOOTER CTA ========== */}
       <section className="px-4 py-20">
         <div className="max-w-2xl mx-auto text-center">
-          <div className="glass-card p-10">
-            <Clock className="w-10 h-10 text-primary-400 mx-auto mb-4" />
-            <h2 className="text-2xl sm:text-3xl font-bold text-dark-100 mb-4">
+          <div className="sf-card p-10">
+            <Clock className="w-10 h-10 text-primary-500 mx-auto mb-4" />
+            <h2 className="text-2xl sm:text-3xl font-bold text-surface-900 mb-4">
               Ready to Start Planning?
             </h2>
-            <p className="text-dark-400 mb-8">
+            <p className="text-surface-500 mb-8">
               Don't let exam stress control you. Create a smart study plan in minutes.
             </p>
-            <Link to="/setup" className="btn-glow inline-flex items-center gap-2 text-base">
+            <Link to="/setup" className="btn-primary inline-flex items-center gap-2 text-base">
               Get Started Now
               <ArrowRight className="w-4 h-4" />
             </Link>
@@ -205,10 +205,10 @@ const HomePage = ({ hasPlan }) => {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-white/5 px-4 py-8">
+      <footer className="border-t border-surface-200 px-4 py-8">
         <div className="max-w-6xl mx-auto text-center">
-          <p className="text-sm text-dark-500">
-            Built with <span className="text-primary-400">♥</span> — StudyFlow © {new Date().getFullYear()}
+          <p className="text-sm text-surface-400">
+            Built with <span className="text-primary-500">♥</span> — StudyFlow © {new Date().getFullYear()}
           </p>
         </div>
       </footer>
