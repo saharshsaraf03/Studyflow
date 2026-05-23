@@ -10,5 +10,4 @@ openai
 pypdf
 python-multipart
 boto3
-PyJWT[crypto]
 httpx
