@@ -17,11 +17,10 @@ from pydantic import BaseModel
 
 import httpx
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
+# NOTE: LangChain/HuggingFace imports are intentionally NOT at the top level.
+# On Render free tier, importing HuggingFaceEmbeddings at module load time
+# triggers model download which OOMs or times out before uvicorn binds the port.
+# All heavy imports are deferred inside the route handler via lazy_imports().
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -48,12 +47,7 @@ dynamodb = boto3.resource(
 )
 table = dynamodb.Table(TABLE_NAME)
 
-# ── Cognito JWT Validation ─────────────────────────────────────────────────────
-# Strategy: decode the JWT payload without full RSA signature verification.
-# We extract the 'sub' (user ID) from the token body. The token was issued by
-# Cognito and is sent over HTTPS — the risk of a forged token reaching this
-# backend without Cognito involvement is negligible for this use case.
-# Full RSA verification can be added later by installing cryptography libs.
+# ── JWT Auth (stdlib only — no crypto packages) ────────────────────────────────
 
 COGNITO_USER_POOL_ID = "ap-south-1_5qo8gZ9cS"
 COGNITO_ISSUER = f"https://cognito-idp.ap-south-1.amazonaws.com/{COGNITO_USER_POOL_ID}"
@@ -62,48 +56,31 @@ security = HTTPBearer()
 
 
 def decode_jwt_payload(token: str) -> dict:
-    """
-    Decode the JWT payload without signature verification.
-    JWT format: header.payload.signature (all base64url encoded)
-    We split on '.' and decode the middle segment.
-    """
-    try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            raise ValueError("Invalid JWT format")
-
-        # base64url decode — pad to multiple of 4
-        payload_b64 = parts[1]
-        payload_b64 += "=" * (4 - len(payload_b64) % 4)
-        payload_bytes = base64.urlsafe_b64decode(payload_b64)
-        return json.loads(payload_bytes.decode("utf-8"))
-    except Exception as e:
-        raise ValueError(f"Failed to decode JWT: {str(e)}")
+    """Decode JWT payload using stdlib base64 — no crypto package needed."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("Invalid JWT format")
+    payload_b64 = parts[1]
+    payload_b64 += "=" * (4 - len(payload_b64) % 4)
+    payload_bytes = base64.urlsafe_b64decode(payload_b64)
+    return json.loads(payload_bytes.decode("utf-8"))
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
-    """
-    Extract user identity from the Cognito JWT.
-    Validates: token format, issuer (must be our Cognito pool), expiry.
-    Does NOT verify RSA signature (no cryptography package needed).
-    """
     token = credentials.credentials
     try:
         payload = decode_jwt_payload(token)
 
-        # Validate issuer — confirms token came from our Cognito pool
         iss = payload.get("iss", "")
         if COGNITO_ISSUER not in iss:
             raise HTTPException(status_code=401, detail="Invalid token issuer")
 
-        # Validate expiry
         exp = payload.get("exp", 0)
         if exp < time.time():
             raise HTTPException(status_code=401, detail="Token expired")
 
-        # Extract user ID
         user_sub = payload.get("sub")
         if not user_sub:
             raise HTTPException(status_code=401, detail="Invalid token: missing sub")
@@ -114,6 +91,33 @@ async def get_current_user(
         raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+
+# ── Lazy imports — deferred until first RAG request ───────────────────────────
+# This is the critical fix: uvicorn binds the port immediately on startup,
+# THEN the model downloads on the first actual API call.
+# Like a restaurant that opens its doors before the chef finishes prep —
+# the kitchen isn't ready yet, but the host can seat you first.
+
+_rag_imports = None
+
+def get_rag_imports():
+    global _rag_imports
+    if _rag_imports is None:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_community.vectorstores import FAISS
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import HumanMessage, SystemMessage
+        _rag_imports = {
+            "RecursiveCharacterTextSplitter": RecursiveCharacterTextSplitter,
+            "FAISS": FAISS,
+            "HuggingFaceEmbeddings": HuggingFaceEmbeddings,
+            "ChatOpenAI": ChatOpenAI,
+            "HumanMessage": HumanMessage,
+            "SystemMessage": SystemMessage,
+        }
+    return _rag_imports
 
 
 # ── Request Models ─────────────────────────────────────────────────────────────
@@ -148,17 +152,18 @@ class MigrationRequest(BaseModel):
 # ── RAG Helpers ────────────────────────────────────────────────────────────────
 
 def build_faiss_index(text: str):
-    splitter = RecursiveCharacterTextSplitter(
+    ri = get_rag_imports()
+    splitter = ri["RecursiveCharacterTextSplitter"](
         chunk_size=500,
         chunk_overlap=50,
         separators=["\n\n", "\n", ".", " "]
     )
     chunks = splitter.split_text(text)
-    embeddings = HuggingFaceEmbeddings(
+    embeddings = ri["HuggingFaceEmbeddings"](
         model_name="all-MiniLM-L6-v2",
         model_kwargs={"device": "cpu"}
     )
-    vectorstore = FAISS.from_texts(chunks, embeddings)
+    vectorstore = ri["FAISS"].from_texts(chunks, embeddings)
     return vectorstore
 
 
@@ -206,8 +211,10 @@ async def handle(request: Request, body: RAGRequestBody):
     if not body.extractedText or len(body.extractedText) < 10:
         return {"error": "Extracted text is too short."}
 
+    ri = get_rag_imports()
+
     vectorstore = build_faiss_index(body.extractedText)
-    llm = ChatOpenAI(
+    llm = ri["ChatOpenAI"](
         model="gpt-4o-mini",
         temperature=0.3,
         max_tokens=4000,
@@ -254,8 +261,8 @@ Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
   }
 }"""
         messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"Study material (retrieved via RAG):\n\n{context}")
+            ri["SystemMessage"](content=system_prompt),
+            ri["HumanMessage"](content=f"Study material (retrieved via RAG):\n\n{context}")
         ]
         response = llm.invoke(messages)
         raw = response.content
@@ -271,8 +278,8 @@ Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
             return {"error": "Missing question field."}
         context = retrieve_relevant_chunks(vectorstore, query=body.question, k=6)
         messages = [
-            SystemMessage(content="You are a helpful study assistant. Answer questions based ONLY on the provided study material. If the answer is not in the material, say so. Be concise but thorough. Include relevant formulas, definitions, or examples when applicable."),
-            HumanMessage(content=f"Study material (retrieved via RAG):\n\n{context}\n\nQuestion: {body.question}")
+            ri["SystemMessage"](content="You are a helpful study assistant. Answer questions based ONLY on the provided study material. If the answer is not in the material, say so. Be concise but thorough. Include relevant formulas, definitions, or examples when applicable."),
+            ri["HumanMessage"](content=f"Study material (retrieved via RAG):\n\n{context}\n\nQuestion: {body.question}")
         ]
         response = llm.invoke(messages)
         return {"success": True, "answer": response.content}
