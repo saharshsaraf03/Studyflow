@@ -891,6 +891,6 @@ async def load_cnote(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/")
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
-
