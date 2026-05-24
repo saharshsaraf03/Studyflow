@@ -687,8 +687,14 @@ async def list_chapters(
     user=Depends(get_current_user)
 ):
     try:
-        items = db_query(pk=f"USER#{user['sub']}", sk_prefix=f"CHAPTER#{subject_id}#")
+        pk = f"USER#{user['sub']}"
+        items = db_query(pk=pk, sk_prefix=f"CHAPTER#{subject_id}#")
         chapters = sorted(items, key=lambda x: x.get("order", 0))
+        # Attach doc count for each chapter
+        for ch in chapters:
+            ch_id = ch.get("chapterId")
+            cdocs = db_query(pk=pk, sk_prefix=f"CDOC#{ch_id}#")
+            ch["docCount"] = len(cdocs)
         return {"success": True, "chapters": chapters}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
