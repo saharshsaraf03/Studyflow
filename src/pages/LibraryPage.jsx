@@ -1,169 +1,157 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Library, Plus, Loader2, FileX } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import DocumentCard from '../components/DocumentCard';
-import DocumentModal from '../components/DocumentModal';
-import { listDocuments, loadNotes, deleteDocument } from '../utils/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import SubjectPanel from '../components/library/SubjectPanel';
+import SubjectContent from '../components/library/SubjectContent';
+import ChapterContent from '../components/library/ChapterContent';
+import { listSubjects, listChapters, saveSubject, saveChapter, deleteSubject, deleteChapter } from '../utils/api';
 
 /**
  * LibraryPage — route: /library
+ * Three-panel layout matching Claude Design exactly:
+ *   App Sidebar (from App.jsx) | SubjectPanel (296px) | ChapterContent (flex 1)
  *
- * Owns:
- * - documents[] and notes{} fetched on mount
- * - selectedDoc + originRect for the modal
- * - delete handler (removes from list after API call)
- *
- * Scale-from-card animation works by:
- * 1. Storing a ref for each card (cardRefs map)
- * 2. On card click, calling getBoundingClientRect() on that card's ref
- * 3. Passing the rect to DocumentModal as originRect
- * 4. DocumentModal uses it as the animation start position
+ * State owned here:
+ *   subjects[]  — all subjects for this user
+ *   chapters[]  — all chapters (loaded per subject on demand, cached)
+ *   selectedSubjectId / selectedChapterId
  */
-const LibraryPage = ({ planData }) => {
-  const [documents, setDocuments] = useState([]);
-  const [notes, setNotes] = useState({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+const LibraryPage = () => {
+  const [subjects, setSubjects] = useState([]);
+  const [chapters, setChapters] = useState([]); // flat list, filtered by subjectId
+  const [selectedSubjectId, setSelectedSubjectId] = useState(null);
+  const [selectedChapterId, setSelectedChapterId] = useState(null);
+  const [loadedSubjectIds, setLoadedSubjectIds] = useState(new Set());
 
-  // Modal state
-  const [selectedDoc, setSelectedDoc] = useState(null);
-  const [originRect, setOriginRect] = useState(null);
-
-  // Map of docId → ref for scale-from-card animation
-  const cardRefs = useRef({});
-
+  // Load all subjects on mount
   useEffect(() => {
-    async function fetchLibraryData() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const [docsResult, notesResult] = await Promise.all([
-          listDocuments(),
-          loadNotes(),
-        ]);
-        const sorted = (docsResult.documents || []).sort(
-          (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)
-        );
-        setDocuments(sorted);
-        setNotes(notesResult.notes || {});
-      } catch (err) {
-        setError(err.message || 'Failed to load library. Please refresh.');
-      } finally {
-        setIsLoading(false);
-      }
+    listSubjects()
+      .then(r => {
+        const subs = r.subjects || [];
+        setSubjects(subs);
+        // Auto-select first subject if exists
+        if (subs.length > 0) handleSelectSubjectLevel(subs[0].subjectId);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load chapters for a subject (cached — only fetches once per subject)
+  const loadChaptersForSubject = useCallback(async (subjectId) => {
+    if (loadedSubjectIds.has(subjectId)) return;
+    try {
+      const r = await listChapters(subjectId);
+      const newChapters = r.chapters || [];
+      setChapters(prev => {
+        const existing = prev.filter(c => c.subjectId !== subjectId);
+        return [...existing, ...newChapters];
+      });
+      setLoadedSubjectIds(prev => new Set([...prev, subjectId]));
+    } catch {}
+  }, [loadedSubjectIds]);
+
+  const handleSelectSubject = useCallback(async (subjectId) => {
+    setSelectedSubjectId(subjectId);
+    setSelectedChapterId(null);
+    await loadChaptersForSubject(subjectId);
+    // Auto-select first chapter if available
+    setChapters(prev => {
+      const subChapters = prev.filter(c => c.subjectId === subjectId);
+      if (subChapters.length > 0) setSelectedChapterId(subChapters[0].chapterId);
+      return prev;
+    });
+  }, [loadChaptersForSubject]);
+
+  const handleSelectSubjectLevel = useCallback(async (subjectId) => {
+    setSelectedSubjectId(subjectId);
+    setSelectedChapterId(null); // show subject-level view
+    await loadChaptersForSubject(subjectId); // load chapters in background for panel
+  }, [loadChaptersForSubject]);
+
+  const handleSelectChapter = useCallback((chapterId) => {
+    setSelectedChapterId(chapterId);
+  }, []);
+
+  const handleAddSubject = useCallback(async (name) => {
+    const result = await saveSubject({ name, order: subjects.length });
+    const newSubject = {
+      subjectId: result.subjectId,
+      name,
+      color: result.color,
+      order: subjects.length,
+    };
+    setSubjects(prev => [...prev, newSubject]);
+    handleSelectSubject(result.subjectId);
+  }, [subjects.length, handleSelectSubject]);
+
+  const handleAddChapter = useCallback(async (name) => {
+    if (!selectedSubjectId) return;
+    const subChapters = chapters.filter(c => c.subjectId === selectedSubjectId);
+    const result = await saveChapter({
+      subjectId: selectedSubjectId,
+      name,
+      order: subChapters.length,
+    });
+    const newChapter = {
+      chapterId: result.chapterId,
+      subjectId: selectedSubjectId,
+      name,
+      order: subChapters.length,
+      docCount: 0,
+    };
+    setChapters(prev => [...prev, newChapter]);
+    setSelectedChapterId(result.chapterId);
+  }, [selectedSubjectId, chapters]);
+
+  const handleDeleteSubject = useCallback(async (subjectId) => {
+    if (!window.confirm('Delete this subject and all its chapters and documents?')) return;
+    await deleteSubject(subjectId);
+    setSubjects(prev => prev.filter(s => s.subjectId !== subjectId));
+    setChapters(prev => prev.filter(c => c.subjectId !== subjectId));
+    if (selectedSubjectId === subjectId) {
+      setSelectedSubjectId(null);
+      setSelectedChapterId(null);
     }
-    fetchLibraryData();
-  }, []);
+  }, [selectedSubjectId]);
 
-  const handleCardClick = useCallback((doc) => {
-    const ref = cardRefs.current[doc.docId];
-    const rect = ref ? ref.getBoundingClientRect() : null;
-    setOriginRect(rect);
-    setSelectedDoc(doc);
-  }, []);
+  const handleDeleteChapter = useCallback(async (subjectId, chapterId) => {
+    if (!window.confirm('Delete this chapter and all its documents?')) return;
+    await deleteChapter(subjectId, chapterId);
+    setChapters(prev => prev.filter(c => c.chapterId !== chapterId));
+    if (selectedChapterId === chapterId) setSelectedChapterId(null);
+  }, [selectedChapterId]);
 
-  const handleModalClose = useCallback(() => {
-    setSelectedDoc(null);
-    setOriginRect(null);
-  }, []);
-
-  const handleDelete = useCallback(async (docId) => {
-    await deleteDocument(docId);
-    setDocuments(prev => prev.filter(d => d.docId !== docId));
-    // If this doc was open in modal, close it
-    if (selectedDoc?.docId === docId) handleModalClose();
-  }, [selectedDoc, handleModalClose]);
+  // Derive current subject/chapter objects
+  const selectedSubject = subjects.find(s => s.subjectId === selectedSubjectId) || null;
+  const selectedChapter = chapters.find(c => c.chapterId === selectedChapterId) || null;
+  const chapterIndex = chapters
+    .filter(c => c.subjectId === selectedSubjectId)
+    .findIndex(c => c.chapterId === selectedChapterId);
 
   return (
-    <div className="min-h-[calc(100vh-4rem)]">
-      <div className="max-w-3xl mx-auto">
-
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, #6C5CE7, #4FACFE)' }}>
-                <Library className="w-5 h-5 text-white" />
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-surface-900">Library</h1>
-            </div>
-            <p className="text-sm text-surface-500">
-              Your saved documents, AI results, chat history, and notes.
-            </p>
-          </div>
-          <Link to="/ai-tools" className="btn-primary flex items-center gap-2 text-sm self-start sm:self-auto">
-            <Plus className="w-4 h-4" />
-            Upload New PDF
-          </Link>
-        </div>
-
-        {/* Loading */}
-        {isLoading && (
-          <div className="flex items-center justify-center gap-3 py-24 text-surface-400">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
-            <span className="text-sm">Loading your library...</span>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && !isLoading && (
-          <div className="sf-card p-6 text-center">
-            <FileX className="w-12 h-12 text-red-400 mx-auto mb-3" />
-            <p className="text-sm text-red-500 mb-4">{error}</p>
-            <button onClick={() => window.location.reload()} className="btn-secondary text-sm">
-              Retry
-            </button>
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!isLoading && !error && documents.length === 0 && (
-          <div className="sf-card p-12 text-center">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
-              style={{ background: 'linear-gradient(135deg, rgba(108,92,231,0.1), rgba(79,172,254,0.1))' }}>
-              <Library className="w-8 h-8 text-primary-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-surface-800 mb-2">No documents yet</h3>
-            <p className="text-sm text-surface-500 mb-6 max-w-sm mx-auto">
-              Upload a PDF in AI Tools to generate a study plan and exam summary.
-              Everything gets saved here automatically.
-            </p>
-            <Link to="/ai-tools" className="btn-primary inline-flex items-center gap-2 text-sm">
-              <Plus className="w-4 h-4" />
-              Upload Your First PDF
-            </Link>
-          </div>
-        )}
-
-        {/* Document list */}
-        {!isLoading && !error && documents.length > 0 && (
-          <div className="space-y-3">
-            <p className="text-xs text-surface-400 font-medium uppercase tracking-wider">
-              {documents.length} document{documents.length > 1 ? 's' : ''}
-            </p>
-            {documents.map(doc => (
-              <DocumentCard
-                key={doc.docId}
-                ref={el => { cardRefs.current[doc.docId] = el; }}
-                doc={doc}
-                onClick={() => handleCardClick(doc)}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Modal — rendered at root level to avoid clipping */}
-      {selectedDoc && (
-        <DocumentModal
-          doc={selectedDoc}
-          planData={planData}
-          notes={notes}
-          originRect={originRect}
-          onClose={handleModalClose}
+    <div style={{
+      display: 'flex',
+      height: '100vh',
+      overflow: 'hidden',
+    }}>
+      <SubjectPanel
+        subjects={subjects}
+        chapters={chapters}
+        selectedSubjectId={selectedSubjectId}
+        selectedChapterId={selectedChapterId}
+        onSelectSubject={handleSelectSubject}
+        onSelectSubjectLevel={handleSelectSubjectLevel}
+        onSelectChapter={handleSelectChapter}
+        onAddSubject={handleAddSubject}
+        onAddChapter={handleAddChapter}
+        onDeleteSubject={handleDeleteSubject}
+        onDeleteChapter={handleDeleteChapter}
+      />
+      {selectedChapterId ? (
+        <ChapterContent
+          subject={selectedSubject}
+          chapter={selectedChapter}
+          chapterIndex={chapterIndex >= 0 ? chapterIndex : 0}
         />
+      ) : (
+        <SubjectContent subject={selectedSubject} />
       )}
     </div>
   );
