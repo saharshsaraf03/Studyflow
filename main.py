@@ -891,6 +891,171 @@ async def load_cnote(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+# ── Subject-level Documents (SDOC) ────────────────────────────────────────────
+
+class SaveSDocRequest(BaseModel):
+    docId: Optional[str] = None
+    subjectId: str
+    fileName: str
+    fileSize: Optional[int] = 0
+    extractedText: Optional[str] = ""
+    aiResults: Optional[dict] = None
+
+
+@app.post("/api/sdocs/save")
+async def save_sdoc(
+    request: Request,
+    body: SaveSDocRequest,
+    user=Depends(get_current_user)
+):
+    try:
+        pk = f"USER#{user['sub']}"
+        doc_id = body.docId or str(uuid_lib.uuid4())[:8]
+        db_put(
+            pk=pk,
+            sk=f"SDOC#{body.subjectId}#{doc_id}",
+            data={
+                "docId": doc_id,
+                "subjectId": body.subjectId,
+                "fileName": body.fileName,
+                "fileSize": body.fileSize,
+                "extractedText": body.extractedText or "",
+                "aiResults": body.aiResults or {},
+                "uploadedAt": datetime.utcnow().isoformat(),
+            }
+        )
+        return {"success": True, "docId": doc_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sdocs/{subject_id}")
+async def list_sdocs(
+    request: Request,
+    subject_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        items = db_query(pk=f"USER#{user['sub']}", sk_prefix=f"SDOC#{subject_id}#")
+        docs = [
+            {
+                "docId": item.get("docId"),
+                "subjectId": item.get("subjectId"),
+                "fileName": item.get("fileName"),
+                "fileSize": item.get("fileSize"),
+                "uploadedAt": item.get("uploadedAt"),
+                "updatedAt": item.get("updatedAt"),
+                "hasAiResults": bool(item.get("aiResults")),
+            }
+            for item in sorted(items, key=lambda x: x.get("uploadedAt", ""))
+        ]
+        return {"success": True, "docs": docs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/sdocs/{subject_id}/{doc_id}")
+async def delete_sdoc(
+    request: Request,
+    subject_id: str,
+    doc_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        db_delete(pk=f"USER#{user['sub']}", sk=f"SDOC#{subject_id}#{doc_id}")
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sdocs/analyze")
+async def analyze_sdoc(
+    request: Request,
+    user=Depends(get_current_user)
+):
+    try:
+        body = await request.json()
+        subject_id = body.get("subjectId")
+        doc_id = body.get("docId")
+        pk = f"USER#{user['sub']}"
+        item = db_get(pk=pk, sk=f"SDOC#{subject_id}#{doc_id}")
+        if not item:
+            raise HTTPException(status_code=404, detail="Document not found")
+        extracted_text = item.get("extractedText", "")
+        if not extracted_text or len(extracted_text) < 10:
+            raise HTTPException(status_code=400, detail="Document has no extractable text")
+        client = get_openai_client()
+        chunks = split_text(extracted_text, chunk_size=500, overlap=50)
+        chunk_embeddings = embed_texts(client, chunks)
+        context = retrieve_relevant_chunks(
+            client, chunks, chunk_embeddings,
+            query="main topics chapters concepts definitions formulas", k=8
+        )
+        system_prompt = """You are an expert academic study planner. Respond ONLY with valid JSON (no markdown):
+{
+  "studyPlan": {"title":"","totalEstimatedHours":10,"topics":[{"name":"","estimatedHours":2,"priority":"high","keyPoints":[],"order":1}]},
+  "examSummary": {"title":"","sections":[{"heading":"","content":"","keyTerms":[],"importantFormulas":[],"examTips":[]}]}
+}"""
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", temperature=0.3, max_tokens=4000,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Study material:\n\n{context}"}
+            ]
+        )
+        raw = response.choices[0].message.content
+        try:
+            json_match = re.search(r'\{[\s\S]*\}', raw)
+            ai_results = json.loads(json_match.group(0))
+        except Exception:
+            ai_results = {"raw": raw}
+        db_put(pk=pk, sk=f"SDOC#{subject_id}#{doc_id}", data={**item, "aiResults": ai_results})
+        return {"success": True, "aiResults": ai_results}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Subject-level Notes (SNOTE) ───────────────────────────────────────────────
+
+class SaveSNoteRequest(BaseModel):
+    subjectId: str
+    content: str
+
+
+@app.post("/api/snotes/save")
+async def save_snote(
+    request: Request,
+    body: SaveSNoteRequest,
+    user=Depends(get_current_user)
+):
+    try:
+        db_put(
+            pk=f"USER#{user['sub']}",
+            sk=f"SNOTE#{body.subjectId}",
+            data={"subjectId": body.subjectId, "content": body.content}
+        )
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/snotes/{subject_id}")
+async def load_snote(
+    request: Request,
+    subject_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        item = db_get(pk=f"USER#{user['sub']}", sk=f"SNOTE#{subject_id}")
+        return {"success": True, "content": item.get("content", "") if item else ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
+
