@@ -540,7 +540,357 @@ If it contains a formula, explain each variable. If it's a concept, give a simpl
 
 
 
-@app.get("/")
+# ── Subject / Chapter / Document (Library) Endpoints ──────────────────────────
+# Key patterns:
+#   SUBJECT#{subjectId}
+#   CHAPTER#{subjectId}#{chapterId}
+#   CDOC#{chapterId}#{docId}
+#   CNOTE#{chapterId}
+
+import uuid as uuid_lib
+
+SUBJECT_COLORS = [
+    '#00D2A0', '#4FACFE', '#6C5CE7', '#FECA57',
+    '#FF6B6B', '#22c55e', '#ec4899', '#06b6d4',
+]
+
+
+class SaveSubjectRequest(BaseModel):
+    subjectId: Optional[str] = None   # None = create new
+    name: str
+    order: Optional[int] = 0
+
+
+class SaveChapterRequest(BaseModel):
+    chapterId: Optional[str] = None   # None = create new
+    subjectId: str
+    name: str
+    order: Optional[int] = 0
+
+
+class SaveCDocRequest(BaseModel):
+    docId: Optional[str] = None
+    chapterId: str
+    fileName: str
+    fileSize: Optional[int] = 0
+    extractedText: Optional[str] = ""
+    aiResults: Optional[dict] = None
+
+
+class SaveCNoteRequest(BaseModel):
+    chapterId: str
+    content: str
+
+
+class AnalyzeDocRequest(BaseModel):
+    docId: str
+    chapterId: str
+
+
+# ── Subjects ──────────────────────────────────────────────────────────────────
+
+@app.post("/api/subjects/save")
+async def save_subject(
+    request: Request,
+    body: SaveSubjectRequest,
+    user=Depends(get_current_user)
+):
+    try:
+        pk = f"USER#{user['sub']}"
+        # Auto-assign color based on existing subject count
+        existing = db_query(pk=pk, sk_prefix="SUBJECT#")
+        color_idx = len(existing) % len(SUBJECT_COLORS)
+        color = SUBJECT_COLORS[color_idx]
+
+        subject_id = body.subjectId or str(uuid_lib.uuid4())[:8]
+        db_put(
+            pk=pk,
+            sk=f"SUBJECT#{subject_id}",
+            data={
+                "subjectId": subject_id,
+                "name": body.name,
+                "color": color,
+                "order": body.order,
+            }
+        )
+        return {"success": True, "subjectId": subject_id, "color": color}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/subjects/list")
+async def list_subjects(request: Request, user=Depends(get_current_user)):
+    try:
+        items = db_query(pk=f"USER#{user['sub']}", sk_prefix="SUBJECT#")
+        subjects = sorted(items, key=lambda x: x.get("order", 0))
+        return {"success": True, "subjects": subjects}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/subjects/{subject_id}")
+async def delete_subject(
+    request: Request,
+    subject_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        pk = f"USER#{user['sub']}"
+        # Delete subject
+        db_delete(pk=pk, sk=f"SUBJECT#{subject_id}")
+        # Delete all chapters under this subject
+        chapters = db_query(pk=pk, sk_prefix=f"CHAPTER#{subject_id}#")
+        for ch in chapters:
+            ch_id = ch.get("chapterId")
+            db_delete(pk=pk, sk=f"CHAPTER#{subject_id}#{ch_id}")
+            # Delete all docs in each chapter
+            docs = db_query(pk=pk, sk_prefix=f"CDOC#{ch_id}#")
+            for doc in docs:
+                db_delete(pk=pk, sk=f"CDOC#{ch_id}#{doc.get('docId')}")
+            # Delete chapter notes
+            db_delete(pk=pk, sk=f"CNOTE#{ch_id}")
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Chapters ──────────────────────────────────────────────────────────────────
+
+@app.post("/api/chapters/save")
+async def save_chapter(
+    request: Request,
+    body: SaveChapterRequest,
+    user=Depends(get_current_user)
+):
+    try:
+        pk = f"USER#{user['sub']}"
+        chapter_id = body.chapterId or str(uuid_lib.uuid4())[:8]
+        db_put(
+            pk=pk,
+            sk=f"CHAPTER#{body.subjectId}#{chapter_id}",
+            data={
+                "chapterId": chapter_id,
+                "subjectId": body.subjectId,
+                "name": body.name,
+                "order": body.order,
+            }
+        )
+        return {"success": True, "chapterId": chapter_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/chapters/{subject_id}")
+async def list_chapters(
+    request: Request,
+    subject_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        items = db_query(pk=f"USER#{user['sub']}", sk_prefix=f"CHAPTER#{subject_id}#")
+        chapters = sorted(items, key=lambda x: x.get("order", 0))
+        return {"success": True, "chapters": chapters}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/chapters/{subject_id}/{chapter_id}")
+async def delete_chapter(
+    request: Request,
+    subject_id: str,
+    chapter_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        pk = f"USER#{user['sub']}"
+        db_delete(pk=pk, sk=f"CHAPTER#{subject_id}#{chapter_id}")
+        # Delete all docs in chapter
+        docs = db_query(pk=pk, sk_prefix=f"CDOC#{chapter_id}#")
+        for doc in docs:
+            db_delete(pk=pk, sk=f"CDOC#{chapter_id}#{doc.get('docId')}")
+        db_delete(pk=pk, sk=f"CNOTE#{chapter_id}")
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Chapter Documents ─────────────────────────────────────────────────────────
+
+@app.post("/api/cdocs/save")
+async def save_cdoc(
+    request: Request,
+    body: SaveCDocRequest,
+    user=Depends(get_current_user)
+):
+    try:
+        pk = f"USER#{user['sub']}"
+        doc_id = body.docId or str(uuid_lib.uuid4())[:8]
+        db_put(
+            pk=pk,
+            sk=f"CDOC#{body.chapterId}#{doc_id}",
+            data={
+                "docId": doc_id,
+                "chapterId": body.chapterId,
+                "fileName": body.fileName,
+                "fileSize": body.fileSize,
+                "extractedText": body.extractedText or "",
+                "aiResults": body.aiResults or {},
+                "uploadedAt": datetime.utcnow().isoformat(),
+            }
+        )
+        return {"success": True, "docId": doc_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/cdocs/{chapter_id}")
+async def list_cdocs(
+    request: Request,
+    chapter_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        items = db_query(pk=f"USER#{user['sub']}", sk_prefix=f"CDOC#{chapter_id}#")
+        # Return metadata only — no extractedText (too large for list)
+        docs = [
+            {
+                "docId": item.get("docId"),
+                "chapterId": item.get("chapterId"),
+                "fileName": item.get("fileName"),
+                "fileSize": item.get("fileSize"),
+                "uploadedAt": item.get("uploadedAt"),
+                "updatedAt": item.get("updatedAt"),
+                "hasAiResults": bool(item.get("aiResults")),
+            }
+            for item in sorted(items, key=lambda x: x.get("uploadedAt", ""))
+        ]
+        return {"success": True, "docs": docs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/cdocs/{chapter_id}/{doc_id}")
+async def delete_cdoc(
+    request: Request,
+    chapter_id: str,
+    doc_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        db_delete(pk=f"USER#{user['sub']}", sk=f"CDOC#{chapter_id}#{doc_id}")
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/cdocs/analyze")
+async def analyze_cdoc(
+    request: Request,
+    body: AnalyzeDocRequest,
+    user=Depends(get_current_user)
+):
+    """
+    Run AI analysis on a document already stored in DynamoDB.
+    Fetches extractedText, runs RAG pipeline, saves aiResults back.
+    """
+    try:
+        pk = f"USER#{user['sub']}"
+        item = db_get(pk=pk, sk=f"CDOC#{body.chapterId}#{body.docId}")
+        if not item:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        extracted_text = item.get("extractedText", "")
+        if not extracted_text or len(extracted_text) < 10:
+            raise HTTPException(status_code=400, detail="Document has no extractable text")
+
+        client = get_openai_client()
+        chunks = split_text(extracted_text, chunk_size=500, overlap=50)
+        chunk_embeddings = embed_texts(client, chunks)
+
+        context = retrieve_relevant_chunks(
+            client, chunks, chunk_embeddings,
+            query="main topics chapters concepts definitions formulas",
+            k=8
+        )
+
+        system_prompt = """You are an expert academic study planner. Given study material, produce:
+1. A STRUCTURED STUDY PLAN
+2. An EXAM-READY SUMMARY
+
+Respond ONLY with valid JSON (no markdown, no backticks):
+{
+  "studyPlan": {
+    "title": "Subject name",
+    "totalEstimatedHours": 10,
+    "topics": [{"name":"","estimatedHours":2,"priority":"high","keyPoints":[],"order":1}]
+  },
+  "examSummary": {
+    "title": "Subject name",
+    "sections": [{"heading":"","content":"","keyTerms":[],"importantFormulas":[],"examTips":[]}]
+  }
+}"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=4000,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Study material:\n\n{context}"}
+            ]
+        )
+        raw = response.choices[0].message.content
+        try:
+            json_match = re.search(r'\{[\s\S]*\}', raw)
+            ai_results = json.loads(json_match.group(0))
+        except Exception:
+            ai_results = {"raw": raw}
+
+        # Update the document record with AI results
+        db_put(
+            pk=pk,
+            sk=f"CDOC#{body.chapterId}#{body.docId}",
+            data={**item, "aiResults": ai_results}
+        )
+        return {"success": True, "aiResults": ai_results}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Chapter Notes ─────────────────────────────────────────────────────────────
+
+@app.post("/api/cnotes/save")
+async def save_cnote(
+    request: Request,
+    body: SaveCNoteRequest,
+    user=Depends(get_current_user)
+):
+    try:
+        db_put(
+            pk=f"USER#{user['sub']}",
+            sk=f"CNOTE#{body.chapterId}",
+            data={"chapterId": body.chapterId, "content": body.content}
+        )
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/cnotes/{chapter_id}")
+async def load_cnote(
+    request: Request,
+    chapter_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        item = db_get(pk=f"USER#{user['sub']}", sk=f"CNOTE#{chapter_id}")
+        return {"success": True, "content": item.get("content", "") if item else ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
 
