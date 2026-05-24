@@ -456,8 +456,91 @@ async def migrate_from_localstorage(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Health Check ───────────────────────────────────────────────────────────────
+
+# ── Notes Endpoints ────────────────────────────────────────────────────────────
+
+class SaveNotesRequest(BaseModel):
+    subjectName: str
+    content: str
+
+
+@app.post("/api/notes/save")
+async def save_notes(
+    request: Request,
+    body: SaveNotesRequest,
+    user=Depends(get_current_user)
+):
+    try:
+        safe_name = body.subjectName.strip().replace("#", "").replace(" ", "_")
+        db_put(
+            pk=f"USER#{user['sub']}",
+            sk=f"NOTE#SUBJECT#{safe_name}",
+            data={"subjectName": body.subjectName, "content": body.content}
+        )
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/notes/load")
+async def load_notes(
+    request: Request,
+    user=Depends(get_current_user)
+):
+    try:
+        items = db_query(pk=f"USER#{user['sub']}", sk_prefix="NOTE#SUBJECT#")
+        notes = {}
+        for item in items:
+            notes[item.get("subjectName", "")] = item.get("content", "")
+        return {"success": True, "notes": notes}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Explain Endpoint ───────────────────────────────────────────────────────────
+
+@app.post("/api/explain")
+async def explain_text(
+    request: Request,
+    user=Depends(get_current_user)
+):
+    try:
+        body = await request.json()
+        selected_text = body.get("selectedText", "").strip()
+        context = body.get("context", "").strip()
+
+        if not selected_text or len(selected_text) < 3:
+            raise HTTPException(status_code=400, detail="Selected text too short")
+
+        client = get_openai_client()
+        prompt = f"""A student is reading study material and selected this text:
+
+"{selected_text}"
+
+Surrounding context:
+{context[:800] if context else "Not provided"}
+
+Give a clear, concise explanation in 3-5 sentences. Focus on clarity for a student.
+If it contains a formula, explain each variable. If it's a concept, give a simple analogy."""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=300,
+            messages=[
+                {"role": "system", "content": "You are a helpful study assistant that explains academic concepts clearly and concisely."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return {"success": True, "explanation": response.choices[0].message.content}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 @app.get("/")
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
+
