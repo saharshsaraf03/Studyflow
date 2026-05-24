@@ -1239,6 +1239,147 @@ async def move_doc(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+# ── Global Chatbot ────────────────────────────────────────────────────────────
+
+class GlobalChatRequest(BaseModel):
+    question: str
+    history: Optional[List[dict]] = []  # [{role, content}] for context
+
+
+@app.post("/api/global-chat")
+async def global_chat(
+    request: Request,
+    body: GlobalChatRequest,
+    user=Depends(get_current_user)
+):
+    """
+    Global chatbot — searches across ALL documents in the user's library.
+    
+    Strategy:
+    1. Load all subject-level docs (SDOC#) and chapter-level docs (CDOC#)
+    2. Embed the question
+    3. For each doc that has extractedText, compute cosine similarity
+    4. Take top chunks across all docs (cross-document RAG)
+    5. Pass to GPT-4o mini with source attribution
+    """
+    try:
+        if not body.question or len(body.question.strip()) < 2:
+            raise HTTPException(status_code=400, detail="Question too short")
+
+        pk = f"USER#{user['sub']}"
+        client = get_openai_client()
+
+        # Load all documents across the library
+        all_docs = []
+
+        # Subject-level docs
+        sdoc_items = db_query(pk=pk, sk_prefix="SDOC#")
+        for item in sdoc_items:
+            text = item.get("extractedText", "")
+            if text and len(text) > 50:
+                all_docs.append({
+                    "fileName": item.get("fileName", "Unknown"),
+                    "text": text[:8000],  # cap per doc
+                })
+
+        # Chapter-level docs
+        cdoc_items = db_query(pk=pk, sk_prefix="CDOC#")
+        for item in cdoc_items:
+            text = item.get("extractedText", "")
+            if text and len(text) > 50:
+                all_docs.append({
+                    "fileName": item.get("fileName", "Unknown"),
+                    "text": text[:8000],
+                })
+
+        if not all_docs:
+            return {
+                "success": True,
+                "answer": "I don't have any documents to search through yet. Upload some PDFs to your Library first, then I can answer questions about them.",
+                "sources": []
+            }
+
+        # Embed question
+        q_embedding = embed_texts(client, [body.question])[0]
+
+        # For each doc, split into chunks, embed, find best chunk
+        best_chunks = []
+        for doc in all_docs:
+            try:
+                chunks = split_text(doc["text"], chunk_size=400, overlap=40)
+                if not chunks:
+                    continue
+                embeddings = embed_texts(client, chunks)
+                scores = cosine_similarity(q_embedding, embeddings)
+                top_idx = int(np.argmax(scores))
+                best_chunks.append({
+                    "fileName": doc["fileName"],
+                    "chunk": chunks[top_idx],
+                    "score": float(scores[top_idx]),
+                })
+            except Exception:
+                continue
+
+        # Sort by relevance, take top 6
+        best_chunks.sort(key=lambda x: x["score"], reverse=True)
+        top_chunks = best_chunks[:6]
+
+        if not top_chunks:
+            return {
+                "success": True,
+                "answer": "I couldn't find relevant information for your question in your library.",
+                "sources": []
+            }
+
+        # Build context with source attribution
+        context_parts = []
+        sources = []
+        for ch in top_chunks:
+            context_parts.append(f"[From: {ch['fileName']}]\n{ch['chunk']}")
+            if ch["fileName"] not in sources:
+                sources.append(ch["fileName"])
+
+        context = "\n\n---\n\n".join(context_parts)
+
+        # Build message history for multi-turn context
+        messages = [
+            {
+                "role": "system",
+                "content": """You are a helpful study assistant with access to a student's entire document library.
+Answer questions based on the provided document excerpts.
+Always mention which document(s) your answer comes from.
+If the answer spans multiple documents, synthesize the information clearly.
+If the question cannot be answered from the provided excerpts, say so honestly."""
+            }
+        ]
+
+        # Add recent history (last 6 messages for context)
+        for msg in (body.history or [])[-6:]:
+            if msg.get("role") in ("user", "assistant"):
+                messages.append({"role": msg["role"], "content": msg["content"]})
+
+        messages.append({
+            "role": "user",
+            "content": f"Document excerpts from my library:\n\n{context}\n\nQuestion: {body.question}"
+        })
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=800,
+            messages=messages
+        )
+
+        answer = response.choices[0].message.content
+        return {"success": True, "answer": answer, "sources": sources}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
