@@ -1386,6 +1386,101 @@ If the question cannot be answered from the provided excerpts, say so honestly."
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+# ── Export All Data ───────────────────────────────────────────────────────────
+
+@app.get("/api/export")
+async def export_all_data(
+    request: Request,
+    user=Depends(get_current_user)
+):
+    """
+    Export all user data as a structured JSON payload.
+    Frontend converts this to a formatted PDF using jsPDF.
+    Returns: subjects, chapters, docs (with aiResults), notes.
+    """
+    try:
+        pk = f"USER#{user['sub']}"
+
+        # Load subjects
+        subjects = db_query(pk=pk, sk_prefix="SUBJECT#")
+        subjects = sorted(subjects, key=lambda x: x.get("order", 0))
+
+        # Load all chapters
+        all_chapters = db_query(pk=pk, sk_prefix="CHAPTER#")
+
+        # Load all chapter docs (with full content)
+        all_cdocs = db_query(pk=pk, sk_prefix="CDOC#")
+
+        # Load all subject docs
+        all_sdocs = db_query(pk=pk, sk_prefix="SDOC#")
+
+        # Load all notes
+        cnotes = db_query(pk=pk, sk_prefix="CNOTE#")
+        snotes = db_query(pk=pk, sk_prefix="SNOTE#")
+
+        # Build structured export
+        export_data = []
+        for subject in subjects:
+            sid = subject.get("subjectId")
+
+            # Subject-level docs
+            sdocs = [d for d in all_sdocs if d.get("subjectId") == sid]
+
+            # Subject-level note
+            snote = next((n for n in snotes if n.get("subjectId") == sid), None)
+
+            # Chapters under this subject
+            chapters = sorted(
+                [c for c in all_chapters if c.get("subjectId") == sid],
+                key=lambda x: x.get("order", 0)
+            )
+
+            chapter_data = []
+            for ch in chapters:
+                cid = ch.get("chapterId")
+                cdocs = [d for d in all_cdocs if d.get("chapterId") == cid]
+                cnote = next((n for n in cnotes if n.get("chapterId") == cid), None)
+                chapter_data.append({
+                    "name": ch.get("name"),
+                    "docs": [
+                        {
+                            "fileName": d.get("fileName"),
+                            "uploadedAt": d.get("uploadedAt"),
+                            "hasAiResults": bool(d.get("aiResults")),
+                            "aiResults": d.get("aiResults") or {},
+                        }
+                        for d in cdocs
+                    ],
+                    "notes": cnote.get("content", "") if cnote else "",
+                })
+
+            export_data.append({
+                "name": subject.get("name"),
+                "color": subject.get("color"),
+                "subjectDocs": [
+                    {
+                        "fileName": d.get("fileName"),
+                        "uploadedAt": d.get("uploadedAt"),
+                        "hasAiResults": bool(d.get("aiResults")),
+                        "aiResults": d.get("aiResults") or {},
+                    }
+                    for d in sdocs
+                ],
+                "subjectNotes": snote.get("content", "") if snote else "",
+                "chapters": chapter_data,
+            })
+
+        return {
+            "success": True,
+            "exportedAt": datetime.utcnow().isoformat(),
+            "userEmail": user.get("email", ""),
+            "data": export_data,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
