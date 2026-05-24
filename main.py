@@ -1172,6 +1172,73 @@ Example format:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+# ── Move Document Endpoint ────────────────────────────────────────────────────
+
+class MoveDocRequest(BaseModel):
+    docId: str
+    # Source
+    sourceType: str        # "subject" or "chapter"
+    sourceId: str          # subjectId or chapterId
+    # Destination
+    destType: str          # "subject" or "chapter"
+    destId: str            # subjectId or chapterId
+    # Needed to reconstruct dest subjectId for chapters
+    destSubjectId: Optional[str] = None
+
+
+@app.post("/api/docs/move")
+async def move_doc(
+    request: Request,
+    body: MoveDocRequest,
+    user=Depends(get_current_user)
+):
+    """
+    Move a document from one location to another.
+    Copies the full document item to the new key, then deletes the old key.
+    Works for: subject→subject, subject→chapter, chapter→subject, chapter→chapter
+    """
+    try:
+        pk = f"USER#{user['sub']}"
+
+        # Read source document
+        if body.sourceType == "subject":
+            src_sk = f"SDOC#{body.sourceId}#{body.docId}"
+        else:
+            src_sk = f"CDOC#{body.sourceId}#{body.docId}"
+
+        item = db_get(pk=pk, sk=src_sk)
+        if not item:
+            raise HTTPException(status_code=404, detail="Source document not found")
+
+        # Write to destination
+        new_doc_id = body.docId  # Keep same docId
+        if body.destType == "subject":
+            dest_sk = f"SDOC#{body.destId}#{new_doc_id}"
+            new_data = {**item, "subjectId": body.destId, "chapterId": None}
+            # Remove chapterId key if present
+            new_data.pop("chapterId", None)
+        else:
+            dest_sk = f"CDOC#{body.destId}#{new_doc_id}"
+            new_data = {**item, "chapterId": body.destId}
+            new_data.pop("subjectId", None)
+
+        # Remove PK/SK from data dict before putting
+        new_data.pop("PK", None)
+        new_data.pop("SK", None)
+
+        db_put(pk=pk, sk=dest_sk, data=new_data)
+
+        # Delete source
+        db_delete(pk=pk, sk=src_sk)
+
+        return {"success": True, "docId": new_doc_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
