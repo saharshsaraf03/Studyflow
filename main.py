@@ -1091,6 +1091,87 @@ async def load_snote(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+# ── Generate Notes Endpoint ───────────────────────────────────────────────────
+
+class GenerateNotesRequest(BaseModel):
+    extractedText: str
+    fileName: str
+
+
+@app.post("/api/generate-notes")
+async def generate_notes(
+    request: Request,
+    body: GenerateNotesRequest,
+    user=Depends(get_current_user)
+):
+    """
+    Generate structured study notes from document text.
+    Returns HTML string ready to inject into contentEditable editor.
+    Format: H3 headings per topic + UL bullet points under each.
+    """
+    try:
+        if not body.extractedText or len(body.extractedText) < 10:
+            raise HTTPException(status_code=400, detail="Document text too short")
+
+        client = get_openai_client()
+
+        # Use RAG to get most relevant chunks
+        chunks = split_text(body.extractedText, chunk_size=500, overlap=50)
+        chunk_embeddings = embed_texts(client, chunks)
+        context = retrieve_relevant_chunks(
+            client, chunks, chunk_embeddings,
+            query="main topics concepts definitions formulas examples",
+            k=10
+        )
+
+        system_prompt = """You are an expert academic note-taker. Generate detailed, structured study notes from the provided study material.
+
+Format your response as valid HTML using ONLY these tags:
+- <h3> for topic headings
+- <ul> and <li> for bullet points under each topic
+- <strong> for key terms or important words within bullets
+- <em> for emphasis
+
+Rules:
+- Create 4-8 topic sections based on the content
+- Each topic must have 4-8 bullet points
+- Bullet points must be detailed and complete sentences, not fragments
+- Include definitions, formulas, examples, and key facts
+- If a formula exists, include it in a bullet point
+- Do NOT include markdown, backticks, or any text outside the HTML
+- Start directly with the first <h3> tag
+
+Example format:
+<h3>Topic Name</h3>
+<ul>
+<li><strong>Key Term:</strong> Detailed explanation of the concept with context.</li>
+<li>Another important point with enough detail to be useful for revision.</li>
+</ul>"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=3000,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Generate detailed study notes from this material ({body.fileName}):\n\n{context}"}
+            ]
+        )
+
+        html_notes = response.choices[0].message.content.strip()
+
+        # Safety: ensure we only have valid HTML, strip any markdown fences
+        import re as re_module
+        html_notes = re_module.sub(r'```[\w]*\n?', '', html_notes).strip()
+
+        return {"success": True, "html": html_notes}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
