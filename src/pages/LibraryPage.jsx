@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SubjectPanel from '../components/library/SubjectPanel';
 import SubjectContent from '../components/library/SubjectContent';
+import GlobalChatbot from '../components/library/GlobalChatbot';
 import ChapterContent from '../components/library/ChapterContent';
 import { listSubjects, listChapters, saveSubject, saveChapter, deleteSubject, deleteChapter } from '../utils/api';
 
@@ -126,6 +127,7 @@ const LibraryPage = () => {
     .findIndex(c => c.chapterId === selectedChapterId);
 
   return (
+    <>
     <div style={{
       display: 'flex',
       height: '100vh',
@@ -154,6 +156,9 @@ const LibraryPage = () => {
         <SubjectContent subject={selectedSubject} />
       )}
     </div>
+
+    <GlobalChatbot />
+  </>
   );
 };
 

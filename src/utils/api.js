@@ -273,3 +273,23 @@ export async function moveDoc({ docId, sourceType, sourceId, destType, destId, d
     body: JSON.stringify({ docId, sourceType, sourceId, destType, destId, destSubjectId }),
   });
 }
+
+// ── Global Chatbot ────────────────────────────────────────────────────────────
+
+export async function globalChat({ question, history }) {
+  return apiFetch('/api/global-chat', {
+    method: 'POST',
+    body: JSON.stringify({ question, history }),
+  });
+}
+
+export async function saveGlobalChat(messages) {
+  return apiFetch('/api/chat/save', {
+    method: 'POST',
+    body: JSON.stringify({ docId: null, messages }),
+  });
+}
+
+export async function loadGlobalChat() {
+  return apiFetch('/api/chat/load');
+}
