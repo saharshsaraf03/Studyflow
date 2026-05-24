@@ -769,6 +769,24 @@ async def list_cdocs(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/cdocs/{chapter_id}/{doc_id}")
+async def get_cdoc(
+    request: Request,
+    chapter_id: str,
+    doc_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        item = db_get(pk=f"USER#{user['sub']}", sk=f"CDOC#{chapter_id}#{doc_id}")
+        if not item:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return {"success": True, "doc": item}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.delete("/api/cdocs/{chapter_id}/{doc_id}")
 async def delete_cdoc(
     request: Request,
@@ -951,6 +969,24 @@ async def list_sdocs(
             for item in sorted(items, key=lambda x: x.get("uploadedAt", ""))
         ]
         return {"success": True, "docs": docs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sdocs/{subject_id}/{doc_id}")
+async def get_sdoc(
+    request: Request,
+    subject_id: str,
+    doc_id: str,
+    user=Depends(get_current_user)
+):
+    try:
+        item = db_get(pk=f"USER#{user['sub']}", sk=f"SDOC#{subject_id}#{doc_id}")
+        if not item:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return {"success": True, "doc": item}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
