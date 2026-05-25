@@ -5,7 +5,8 @@ import time
 import base64
 import numpy as np
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Any
+from decimal import Decimal
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -179,7 +180,7 @@ class RAGRequestBody(BaseModel):
 
 
 class SavePlannerRequest(BaseModel):
-    planData: dict
+    planData: Any  # Can be dict or list
 
 
 class SaveDocumentRequest(BaseModel):
@@ -201,8 +202,20 @@ class MigrationRequest(BaseModel):
 
 # ── DynamoDB Helpers ───────────────────────────────────────────────────────────
 
+def float_to_decimal(obj):
+    """Recursively convert floats to Decimal for DynamoDB compatibility."""
+    if isinstance(obj, float):
+        return Decimal(str(obj))
+    elif isinstance(obj, dict):
+        return {k: float_to_decimal(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [float_to_decimal(i) for i in obj]
+    return obj
+
+
 def db_put(pk: str, sk: str, data: dict):
     item = {"PK": pk, "SK": sk, "updatedAt": datetime.utcnow().isoformat(), **data}
+    item = float_to_decimal(item)
     table.put_item(Item=item)
 
 
@@ -337,9 +350,16 @@ async def save_planner(
     user=Depends(get_current_user)
 ):
     try:
-        db_put(pk=f"USER#{user['sub']}", sk="PLANNER", data={"planData": body.planData})
+        plan_data = body.planData
+        # Trim plan array to last 90 days to avoid DynamoDB 400KB limit
+        if isinstance(plan_data, dict) and "plan" in plan_data:
+            if len(plan_data["plan"]) > 90:
+                plan_data = {**plan_data, "plan": plan_data["plan"][:90]}
+        db_put(pk=f"USER#{user['sub']}", sk="PLANNER", data={"planData": plan_data})
         return {"success": True}
     except Exception as e:
+        import traceback
+        print(f"save_planner error: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1484,4 +1504,3 @@ async def export_all_data(
 @app.get("/")
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
-
