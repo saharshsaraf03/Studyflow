@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, Sparkles, BookOpen, Brain, Library } from 'lucide-react';
-import { signIn, getUserAttributes } from '../utils/auth';
+import { signIn, getUserAttributes, signInWithGoogle } from '../utils/auth';
 import { useAuth } from '../contexts/AuthContext';
 
 /* ============================================================
@@ -193,7 +193,7 @@ const LoginPage = () => {
   };
 
   const handleGoogleSignIn = () => {
-    alert('Google sign-in coming soon!');
+    signInWithGoogle();
   };
 
   return (

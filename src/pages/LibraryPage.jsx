@@ -101,6 +101,15 @@ const LibraryPage = () => {
     setSelectedChapterId(result.chapterId);
   }, [selectedSubjectId, chapters]);
 
+  // Update chapter doc count in sidebar when doc is uploaded/deleted
+  const handleChapterDocCountChange = useCallback((chapterId, delta) => {
+    setChapters(prev => prev.map(c =>
+      c.chapterId === chapterId
+        ? { ...c, docCount: Math.max(0, (c.docCount || 0) + delta) }
+        : c
+    ));
+  }, []);
+
   const handleDeleteSubject = useCallback(async (subjectId) => {
     if (!window.confirm('Delete this subject and all its chapters and documents?')) return;
     await deleteSubject(subjectId);
@@ -151,6 +160,7 @@ const LibraryPage = () => {
           subject={selectedSubject}
           chapter={selectedChapter}
           chapterIndex={chapterIndex >= 0 ? chapterIndex : 0}
+          onDocCountChange={handleChapterDocCountChange}
         />
       ) : (
         <SubjectContent subject={selectedSubject} />

@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
     "amazon-cognito-identity-js": "^6.3.16",
     "framer-motion": "^11.11.0",
     "html2canvas": "^1.4.1",

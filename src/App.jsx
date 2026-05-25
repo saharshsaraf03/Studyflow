@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/Sidebar';
 import HomePage from './pages/HomePage';
 import SetupPage from './pages/SetupPage';
 import DashboardPage from './pages/DashboardPage';
 import LibraryPage from './pages/LibraryPage';
+import SettingsPage from './pages/SettingsPage';
+import HelpPage from './pages/HelpPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import { loadData, clearData } from './utils/storage';
@@ -14,14 +17,15 @@ import { initApi, savePlanner, loadPlanner, migrateToCloud } from './utils/api';
 
 function AppInner() {
   const { isAuthenticated, isLoading, getToken } = useAuth();
+
+  // Initialize API immediately whenever getToken changes — don't wait for effects
+  if (isAuthenticated && getToken) initApi(getToken);
   const [planData, setPlanDataState] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showMigrationModal, setShowMigrationModal] = useState(false);
   const [localDataForMigration, setLocalDataForMigration] = useState(null);
   const [isMigrating, setIsMigrating] = useState(false);
-
-  useEffect(() => { if (isAuthenticated) initApi(getToken); }, [isAuthenticated, getToken]);
 
   useEffect(() => {
     if (!isAuthenticated || isLoading) return;
@@ -30,23 +34,49 @@ function AppInner() {
       try {
         const result = await loadPlanner();
         if (result.planData) {
+          // Cloud load succeeded — also update localStorage as backup
           setPlanDataState(result.planData);
+          localStorage.setItem('sf_plan_backup', JSON.stringify(result.planData));
+        } else {
+          // No cloud data — check localStorage backup
+          const backup = localStorage.getItem('sf_plan_backup');
+          if (backup) {
+            const parsed = JSON.parse(backup);
+            setPlanDataState(parsed);
+            // Re-save to cloud since it was missing
+            try { await savePlanner(parsed); } catch {}
+          } else {
+            const localData = loadData();
+            if (localData) { setLocalDataForMigration(localData); setShowMigrationModal(true); }
+          }
+        }
+      } catch (err) {
+        console.error('Cloud load failed:', err);
+        // Fall back to localStorage backup
+        const backup = localStorage.getItem('sf_plan_backup');
+        if (backup) {
+          try { setPlanDataState(JSON.parse(backup)); } catch {}
         } else {
           const localData = loadData();
-          if (localData) { setLocalDataForMigration(localData); setShowMigrationModal(true); }
+          if (localData) setPlanDataState(localData);
         }
-      } catch {
-        const localData = loadData();
-        if (localData) setPlanDataState(localData);
       } finally { setPlanLoading(false); }
     }
     loadFromCloud();
-  }, [isAuthenticated, isLoading]);
+  }, [isAuthenticated, isLoading, getToken]);
 
   const setPlanData = useCallback(async (newPlanData) => {
     setPlanDataState(newPlanData);
-    if (!newPlanData) return;
-    try { await savePlanner(newPlanData); } catch {}
+    if (!newPlanData) {
+      localStorage.removeItem('sf_plan_backup');
+      return;
+    }
+    // Always save to localStorage as backup first (instant)
+    localStorage.setItem('sf_plan_backup', JSON.stringify(newPlanData));
+    // Then save to cloud
+    try { await savePlanner(newPlanData); } catch (err) {
+      console.error('Cloud save failed, but localStorage backup saved:', err);
+    }
   }, []);
 
   const handleAcceptMigration = async () => {
@@ -101,6 +131,8 @@ function AppInner() {
                         <Route path="/" element={<HomePage hasPlan={!!planData} />} />
                         <Route path="/setup" element={<SetupPage setPlanData={setPlanData} />} />
                         <Route path="/dashboard" element={<DashboardPage planData={planData} setPlanData={setPlanData} />} />
+                        <Route path="/settings" element={<SettingsPage />} />
+                        <Route path="/help" element={<HelpPage />} />
                       </Routes>
                     </div>
                   } />
@@ -130,7 +162,7 @@ function AppInner() {
 }
 
 function App() {
-  return <AuthProvider><Router><AppInner /></Router></AuthProvider>;
+  return <ThemeProvider><AuthProvider><Router><AppInner /></Router></AuthProvider></ThemeProvider>;
 }
 
 export default App;

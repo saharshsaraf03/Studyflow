@@ -15,7 +15,7 @@ import { listCDocs, saveCDoc, deleteCDoc, analyzeCDoc, loadCNote, getCDoc } from
  * Documents section (DocCards), Notes & Key Points (rich editor)
  * Also handles: upload modal, analysis panel, doc viewer modal
  */
-const ChapterContent = ({ subject, chapter, chapterIndex }) => {
+const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) => {
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [noteContent, setNoteContent] = useState('');
@@ -65,6 +65,7 @@ const ChapterContent = ({ subject, chapter, chapterIndex }) => {
       uploadedAt: new Date().toISOString(),
       hasAiResults: false,
     }]);
+    if (onDocCountChange) onDocCountChange(chapter.chapterId, 1);
     setShowUpload(false);
   }, [chapter]);
 
@@ -93,6 +94,7 @@ const ChapterContent = ({ subject, chapter, chapterIndex }) => {
     if (!window.confirm(`Delete "${doc.fileName}"?`)) return;
     await deleteCDoc(chapter.chapterId, doc.docId);
     setDocs(prev => prev.filter(d => d.docId !== doc.docId));
+    if (onDocCountChange) onDocCountChange(chapter.chapterId, -1);
     if (analysisPanelDoc?.docId === doc.docId) { setAnalysisPanelDoc(null); setAnalysisPanelResults(null); }
   }, [chapter, analysisPanelDoc]);
 

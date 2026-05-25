@@ -149,3 +149,76 @@ export function confirmForgotPassword(email, code, newPassword) {
     });
   });
 }
+
+// ── Google OAuth via Cognito Hosted UI ───────────────────────────────────────
+
+const COGNITO_DOMAIN = 'https://ap-south-15qo8gz9cs.auth.ap-south-1.amazoncognito.com';
+const OAUTH_CLIENT_ID = '5e14397oapv9ubug1p2um2c3ie';
+
+/**
+ * Redirect to Cognito's Google OAuth endpoint.
+ * Cognito handles Google login and redirects back with ?code=...
+ */
+export function signInWithGoogle() {
+  const redirectUri = window.location.origin;
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: OAUTH_CLIENT_ID,
+    redirect_uri: redirectUri,
+    identity_provider: 'Google',
+    scope: 'email openid profile',
+  });
+  window.location.href = `${COGNITO_DOMAIN}/oauth2/authorize?${params.toString()}`;
+}
+
+/**
+ * Exchange authorization code for tokens.
+ * Called on page load when ?code= is in the URL (after Google redirect).
+ * Returns { tokens, user: { sub, email, name, idToken, accessToken } }
+ */
+export async function handleOAuthCallback(code) {
+  const redirectUri = window.location.origin;
+  const response = await fetch(`${COGNITO_DOMAIN}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: OAUTH_CLIENT_ID,
+      redirect_uri: redirectUri,
+      code,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error_description || 'OAuth token exchange failed');
+  }
+
+  const tokens = await response.json();
+
+  // Decode id_token payload (base64url) to extract user attributes
+  const parts = tokens.id_token.split('.');
+  const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+
+  return {
+    tokens,
+    user: {
+      sub: payload.sub,
+      email: payload.email,
+      name: payload.name || payload.email?.split('@')[0] || 'User',
+      idToken: tokens.id_token,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+    },
+  };
+}
+
+/**
+ * Get session for OAuth users (stores tokens in memory via AuthContext).
+ * Returns a mock session object compatible with getToken() in AuthContext.
+ */
+export function createOAuthSession(idToken) {
+  return {
+    getIdToken: () => ({ getJwtToken: () => idToken }),
+  };
+}

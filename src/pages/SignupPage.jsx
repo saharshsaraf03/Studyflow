@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Check } from 'lucide-react';
-import { signUp, confirmSignUp, resendConfirmationCode } from '../utils/auth';
+import { signUp, confirmSignUp, resendConfirmationCode, signInWithGoogle } from '../utils/auth';
 
 /* ============================================================
    SignupPage — Full-width split-screen auth page
@@ -280,7 +280,7 @@ const SignupPage = () => {
   };
 
   const handleGoogleSignUp = () => {
-    alert('Google sign-in coming soon!');
+    signInWithGoogle();
   };
 
   // ── Email Verification Step ──────────────────────────────
