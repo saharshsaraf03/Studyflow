@@ -812,6 +812,7 @@ async def list_cdocs(
                 "uploadedAt": item.get("uploadedAt"),
                 "updatedAt": item.get("updatedAt"),
                 "hasAiResults": bool(item.get("aiResults")),
+                "pdfUrl": item.get("pdfUrl", ""),
             }
             for item in sorted(items, key=lambda x: x.get("uploadedAt", ""))
         ]
@@ -1020,6 +1021,7 @@ async def list_sdocs(
                 "uploadedAt": item.get("uploadedAt"),
                 "updatedAt": item.get("updatedAt"),
                 "hasAiResults": bool(item.get("aiResults")),
+                "pdfUrl": item.get("pdfUrl", ""),
             }
             for item in sorted(items, key=lambda x: x.get("uploadedAt", ""))
         ]
