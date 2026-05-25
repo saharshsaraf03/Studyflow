@@ -7,8 +7,6 @@ import numpy as np
 from datetime import datetime
 from typing import Optional, List, Any
 from decimal import Decimal
-import boto3
-from botocore.exceptions import ClientError as S3ClientError
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -53,6 +51,27 @@ dynamodb = boto3.resource(
     aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
 )
 table = dynamodb.Table(TABLE_NAME)
+
+# ── S3 Setup ─────────────────────────────────────────────────────────────────
+S3_BUCKET = "studyflow-documents"
+S3_REGION = "ap-south-1"
+s3 = boto3.client(
+    "s3",
+    region_name=S3_REGION,
+    aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+    aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+)
+
+
+def upload_pdf_to_s3(file_bytes: bytes, key: str) -> str:
+    s3.put_object(
+        Bucket=S3_BUCKET,
+        Key=key,
+        Body=file_bytes,
+        ContentType="application/pdf",
+    )
+    return f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{key}"
+
 
 # ── JWT Auth (stdlib only) ─────────────────────────────────────────────────────
 
