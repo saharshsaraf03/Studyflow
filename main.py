@@ -234,6 +234,17 @@ def float_to_decimal(obj):
     return obj
 
 
+def decimal_to_python(obj):
+    """Recursively convert Decimal to float/int for JSON serialization."""
+    if isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    elif isinstance(obj, dict):
+        return {k: decimal_to_python(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [decimal_to_python(i) for i in obj]
+    return obj
+
+
 def db_put(pk: str, sk: str, data: dict):
     item = {"PK": pk, "SK": sk, "updatedAt": datetime.utcnow().isoformat(), **data}
     item = float_to_decimal(item)
@@ -243,7 +254,8 @@ def db_put(pk: str, sk: str, data: dict):
 def db_get(pk: str, sk: str) -> Optional[dict]:
     try:
         resp = table.get_item(Key={"PK": pk, "SK": sk})
-        return resp.get("Item")
+        item = resp.get("Item")
+        return decimal_to_python(item) if item else None
     except ClientError:
         return None
 
@@ -253,7 +265,7 @@ def db_query(pk: str, sk_prefix: str) -> list:
         resp = table.query(
             KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with(sk_prefix)
         )
-        return resp.get("Items", [])
+        return [decimal_to_python(item) for item in resp.get("Items", [])]
     except ClientError:
         return []
 
