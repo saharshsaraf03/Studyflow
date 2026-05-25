@@ -7,6 +7,8 @@ import numpy as np
 from datetime import datetime
 from typing import Optional, List, Any
 from decimal import Decimal
+import boto3
+from botocore.exceptions import ClientError as S3ClientError
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -595,6 +597,8 @@ class SaveCDocRequest(BaseModel):
     fileSize: Optional[int] = 0
     extractedText: Optional[str] = ""
     aiResults: Optional[dict] = None
+    pdfUrl: Optional[str] = None
+    s3Key: Optional[str] = None
 
 
 class SaveCNoteRequest(BaseModel):
@@ -761,6 +765,8 @@ async def save_cdoc(
                 "fileSize": body.fileSize,
                 "extractedText": body.extractedText or "",
                 "aiResults": body.aiResults or {},
+                "pdfUrl": body.pdfUrl or "",
+                "s3Key": body.s3Key or "",
                 "uploadedAt": datetime.utcnow().isoformat(),
             }
         )
@@ -945,6 +951,8 @@ class SaveSDocRequest(BaseModel):
     fileSize: Optional[int] = 0
     extractedText: Optional[str] = ""
     aiResults: Optional[dict] = None
+    pdfUrl: Optional[str] = None
+    s3Key: Optional[str] = None
 
 
 @app.post("/api/sdocs/save")
@@ -966,6 +974,8 @@ async def save_sdoc(
                 "fileSize": body.fileSize,
                 "extractedText": body.extractedText or "",
                 "aiResults": body.aiResults or {},
+                "pdfUrl": body.pdfUrl or "",
+                "s3Key": body.s3Key or "",
                 "uploadedAt": datetime.utcnow().isoformat(),
             }
         )
@@ -1501,6 +1511,46 @@ async def export_all_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+# ── PDF Upload to S3 ──────────────────────────────────────────────────────────
+
+class UploadPDFRequest(BaseModel):
+    fileName: str
+    fileBase64: str  # base64-encoded PDF bytes
+    docId: Optional[str] = None
+
+
+@app.post("/api/docs/upload-pdf")
+async def upload_pdf(
+    request: Request,
+    body: UploadPDFRequest,
+    user=Depends(get_current_user)
+):
+    """
+    Upload a PDF to S3 and return the public URL.
+    Called during document upload flow before saving to DynamoDB.
+    """
+    try:
+        import base64
+        # Decode base64 PDF
+        file_bytes = base64.b64decode(body.fileBase64)
+
+        # Generate unique S3 key
+        doc_id = body.docId or str(uuid_lib.uuid4())[:8]
+        safe_name = body.fileName.replace(" ", "_").replace("/", "_")
+        s3_key = f"pdfs/{user['sub']}/{doc_id}/{safe_name}"
+
+        # Upload to S3
+        pdf_url = upload_pdf_to_s3(file_bytes, s3_key)
+
+        return {"success": True, "pdfUrl": pdf_url, "docId": doc_id, "s3Key": s3_key}
+    except Exception as e:
+        import traceback
+        print(f"PDF upload error: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 async def health():
     return {"status": "StudyFlow RAG backend running", "version": "2.0"}
+

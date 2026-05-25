@@ -2,6 +2,6 @@ fastapi
 uvicorn
 openai
 boto3
-httpx
 numpy
 python-multipart
+pydantic
