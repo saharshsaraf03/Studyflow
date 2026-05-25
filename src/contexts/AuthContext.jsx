@@ -25,7 +25,7 @@ export function AuthProvider({ children }) {
 
       if (code) {
         // Remove code from URL immediately to prevent re-use on refresh
-        window.history.replaceState({}, document.title, window.location.pathname);
+        window.history.replaceState({}, document.title, '/');
 
         const result = await handleOAuthCallback(code);
         const oauthUser = {
@@ -35,9 +35,16 @@ export function AuthProvider({ children }) {
           _oauthTokens: result.tokens,
           _idToken: result.user.idToken,
         };
+        // Persist OAuth session
+        localStorage.setItem('sf_oauth_user', JSON.stringify({
+          ...oauthUser,
+          _expiresAt: Date.now() + (result.tokens.expires_in * 1000),
+        }));
         setUser(oauthUser);
         setIsAuthenticated(true);
         setIsLoading(false);
+        // Navigate to library after successful OAuth
+        window.location.href = '/library';
         return;
       }
 

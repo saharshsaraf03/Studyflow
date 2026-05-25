@@ -26,6 +26,8 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
   const [analysisPanelDoc, setAnalysisPanelDoc] = useState(null);
   const [analysisPanelResults, setAnalysisPanelResults] = useState(null);
   const [viewerDoc, setViewerDoc] = useState(null);
+  const [viewerFile, setViewerFile] = useState(null); // actual File object for PDF rendering
+  const fileCache = React.useRef({}); // docId -> File blob cache
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [moveDoc_, setMoveDoc] = useState(null); // doc being moved
   const notesEditorRef = React.useRef(null);
@@ -57,6 +59,8 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
       extractedText,
       aiResults: null,
     });
+    // Cache the file blob for same-session viewing
+    fileCache.current[result.docId] = file;
     setDocs(prev => [...prev, {
       docId: result.docId,
       chapterId: chapter.chapterId,
@@ -103,8 +107,10 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
       const result = await getCDoc(chapter.chapterId, doc.docId);
       setViewerDoc(result.doc || doc);
     } catch {
-      setViewerDoc(doc); // fallback to metadata
+      setViewerDoc(doc);
     }
+    // Pass cached file if available
+    setViewerFile(fileCache.current[doc.docId] || null);
   }, [chapter]);
 
   const handleViewSummary = useCallback(async (doc) => {
@@ -322,17 +328,20 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
           position: 'fixed', inset: 0, zIndex: 80,
           background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-        }} onClick={() => setViewerDoc(null)}>
+        }} onClick={() => { setViewerDoc(null); setViewerFile(null); }}>
           <div style={{
             background: '#fff', borderRadius: 16, width: '100%', maxWidth: 760, maxHeight: '85vh',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid #E5E7EB' }}>
               <span style={{ fontSize: 15, fontWeight: 600, color: '#1A1D2E', flex: 1 }}>{viewerDoc.fileName}</span>
-              <button onClick={() => setViewerDoc(null)} style={{ width: 28, height: 28, borderRadius: 7, background: '#F5F5F7', border: 'none', color: '#6B7280', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>✕</button>
+              <button onClick={() => { setViewerDoc(null); setViewerFile(null); }} style={{ width: 28, height: 28, borderRadius: 7, background: '#F5F5F7', border: 'none', color: '#6B7280', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>✕</button>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
-              <DocumentViewer extractedText={viewerDoc.extractedText || 'No text available for this document.'} />
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <DocumentViewer
+                file={viewerFile}
+                fileName={viewerDoc.fileName}
+              />
             </div>
           </div>
         </div>

@@ -110,7 +110,7 @@ function AppInner() {
           <ProtectedRoute>
             <div className="min-h-screen bg-surface-50 text-surface-900 flex">
               <Sidebar hasPlan={!!planData} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-              <main className="flex-1 min-h-screen md:ml-[240px]">
+              <main className="flex-1 min-h-screen md:ml-[204px]">
                 {/* Mobile header */}
                 <div className="md:hidden flex items-center justify-between px-4 h-14 bg-white border-b border-surface-200">
                   <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-surface-100">

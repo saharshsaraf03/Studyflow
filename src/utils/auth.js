@@ -222,3 +222,19 @@ export function createOAuthSession(idToken) {
     getIdToken: () => ({ getJwtToken: () => idToken }),
   };
 }
+
+// ── Change Password ───────────────────────────────────────────────────────────
+
+export async function changePassword(oldPassword, newPassword) {
+  return new Promise((resolve, reject) => {
+    const user = userPool.getCurrentUser();
+    if (!user) return reject(new Error('Not authenticated'));
+    user.getSession((err, session) => {
+      if (err) return reject(err);
+      user.changePassword(oldPassword, newPassword, (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      });
+    });
+  });
+}

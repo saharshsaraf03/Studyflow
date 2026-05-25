@@ -431,6 +431,515 @@ body {
   .table-dark { @apply sf-table; }
 }
 
+
+/* ── Dark mode text visibility fixes ─────────────────────────────────────────
+   These catch inline-style text that doesn't use CSS variables.
+   Applied broadly so no text becomes invisible on dark backgrounds. */
+
+[data-theme="dark"] .sf-card,
+[data-theme="dark"] .sf-card * {
+  color: inherit;
+}
+
+/* Force readable text inside cards */
+[data-theme="dark"] .sf-card h1,
+[data-theme="dark"] .sf-card h2,
+[data-theme="dark"] .sf-card h3,
+[data-theme="dark"] .sf-card h4,
+[data-theme="dark"] .sf-card p,
+[data-theme="dark"] .sf-card span,
+[data-theme="dark"] .sf-card label,
+[data-theme="dark"] .sf-card div {
+  color: inherit;
+}
+
+/* Main content areas */
+[data-theme="dark"] main h1,
+[data-theme="dark"] main h2,
+[data-theme="dark"] main h3,
+[data-theme="dark"] main p,
+[data-theme="dark"] main span,
+[data-theme="dark"] main label {
+  color: inherit;
+}
+
+/* Root text color for dark mode — everything inherits from here */
+[data-theme="dark"],
+[data-theme="dark"] body,
+[data-theme="dark"] #root {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+/* Panels and content containers */
+[data-theme="dark"] aside,
+[data-theme="dark"] main,
+[data-theme="dark"] section,
+[data-theme="dark"] article,
+[data-theme="dark"] header,
+[data-theme="dark"] footer {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Override hardcoded dark text colors that become invisible */
+[data-theme="dark"] [style*="#1A1D2E"],
+[data-theme="dark"] [style*="#374151"],
+[data-theme="dark"] [style*="#1a1d2e"] {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] [style*="#6B7280"],
+[data-theme="dark"] [style*="#4B5563"],
+[data-theme="dark"] [style*="#6b7280"] {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] [style*="#9CA3AF"],
+[data-theme="dark"] [style*="#9ca3af"] {
+  color: var(--text-muted) !important;
+}
+
+/* White/light backgrounds that need to flip */
+[data-theme="dark"] [style*="background: rgb(255, 255, 255)"],
+[data-theme="dark"] [style*="background-color: rgb(255, 255, 255)"] {
+  background: var(--bg-card) !important;
+}
+
+[data-theme="dark"] [style*="background: rgb(245, 245, 247)"],
+[data-theme="dark"] [style*="background: rgb(250, 250, 250)"],
+[data-theme="dark"] [style*="background: rgb(249, 249, 251)"] {
+  background: #252840 !important;
+}
+
+/* Border colors */
+[data-theme="dark"] [style*="border-color: rgb(229, 231, 235)"],
+[data-theme="dark"] [style*="border: 1px solid rgb(229, 231, 235)"],
+[data-theme="dark"] [style*="border-bottom: 1px solid rgb(229, 231, 235)"],
+[data-theme="dark"] [style*="border-top: 1px solid rgb(229, 231, 235)"] {
+  border-color: var(--border-light) !important;
+}
+
+/* Input fields */
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  background: #252840 !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-light) !important;
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* Library specific — subject panel */
+[data-theme="dark"] aside[style],
+[data-theme="dark"] aside > div {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-light) !important;
+}
+
+/* Dividers */
+[data-theme="dark"] [style*="background: #F0F0F2"],
+[data-theme="dark"] [style*="background: rgb(240, 240, 242)"],
+[data-theme="dark"] [style*="background: #E5E7EB"],
+[data-theme="dark"] [style*="background: rgb(229, 231, 235)"] {
+  background: var(--border-light) !important;
+}
+
+/* Buttons with light backgrounds */
+[data-theme="dark"] [style*="background: #F5F5F7"],
+[data-theme="dark"] [style*="background: rgb(245, 245, 247)"] {
+  background: #2D3148 !important;
+  color: var(--text-secondary) !important;
+}
+
+/* Modals */
+[data-theme="dark"] [style*="background: #fff"],
+[data-theme="dark"] [style*="background: #ffffff"],
+[data-theme="dark"] [style*="background: white"] {
+  background: var(--bg-card) !important;
+}
+
+/* Fix contentEditable notes editor */
+[data-theme="dark"] [contenteditable] {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+
+/* ── Targeted component fixes ────────────────────────────────────────────────*/
+
+/* SubjectPanel — left sidebar panel */
+[data-theme="dark"] aside {
+  background: var(--bg-card) !important;
+  border-color: var(--border-light) !important;
+}
+
+[data-theme="dark"] aside * {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] aside h3,
+[data-theme="dark"] aside span,
+[data-theme="dark"] aside div {
+  color: var(--text-primary) !important;
+}
+
+/* Subject list items */
+[data-theme="dark"] aside button {
+  color: var(--text-secondary) !important;
+}
+
+/* Chapter labels */
+[data-theme="dark"] aside [style*="color: #9CA3AF"],
+[data-theme="dark"] aside [style*="color: #6B7280"],
+[data-theme="dark"] aside [style*="color: #4B5563"] {
+  color: var(--text-muted) !important;
+}
+
+/* Active subject name */
+[data-theme="dark"] aside [style*="color: #1A1D2E"],
+[data-theme="dark"] aside [style*="color: #374151"] {
+  color: var(--text-primary) !important;
+}
+
+/* Search input in sidebar */
+[data-theme="dark"] aside input {
+  background: #2D3148 !important;
+  color: var(--text-primary) !important;
+}
+
+/* Chapter badge */
+[data-theme="dark"] aside [style*="background: #F5F5F7"],
+[data-theme="dark"] aside [style*="background: #F0F0F2"],
+[data-theme="dark"] aside [style*="background: transparent"] {
+  background: transparent !important;
+}
+
+/* Active chapter highlight */
+[data-theme="dark"] aside [style*="background: #F5F5F7"] {
+  background: #2D3148 !important;
+}
+
+/* SubjectContent / ChapterContent main area */
+[data-theme="dark"] main > div {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] main h1,
+[data-theme="dark"] main h2,
+[data-theme="dark"] main p {
+  color: var(--text-primary) !important;
+}
+
+/* Breadcrumb */
+[data-theme="dark"] [style*="color: #9CA3AF"] {
+  color: var(--text-muted) !important;
+}
+
+/* Info banner */
+[data-theme="dark"] [style*="background: rgba(108,92,231,0.06)"] {
+  background: rgba(108, 92, 231, 0.15) !important;
+}
+
+/* Empty state dashed border */
+[data-theme="dark"] [style*="border: 2px dashed #E5E7EB"] {
+  border-color: var(--border-light) !important;
+  background: #1e2035 !important;
+}
+
+/* Notes toolbar */
+[data-theme="dark"] [style*="borderBottom: '1px solid #F0F0F2'"],
+[data-theme="dark"] [style*="border-bottom: 1px solid #F0F0F2"] {
+  border-color: var(--border-light) !important;
+}
+
+/* Toolbar buttons */
+[data-theme="dark"] [style*="background: #F5F5F7"][style*="color: #6B7280"] {
+  background: #2D3148 !important;
+  color: var(--text-secondary) !important;
+}
+
+
+
+
+/* ── Help & Settings dark mode fixes ────────────────────────────────────────*/
+
+/* FAQ questions text */
+[data-theme="dark"] button span,
+[data-theme="dark"] button div {
+  color: inherit;
+}
+
+/* All text inside sf-card inherits dark color */
+[data-theme="dark"] .sf-card {
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .sf-card h3,
+[data-theme="dark"] .sf-card h4,
+[data-theme="dark"] .sf-card p,
+[data-theme="dark"] .sf-card span,
+[data-theme="dark"] .sf-card label,
+[data-theme="dark"] .sf-card button {
+  color: inherit;
+}
+
+/* Specifically catch the min-h screen pages */
+[data-theme="dark"] .min-h-\[calc\(100vh-4rem\)\] {
+  color: var(--text-primary);
+}
+
+/* Help page FAQ buttons */
+[data-theme="dark"] button[style*="background: transparent"] {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] button[style*="background: transparent"] span {
+  color: var(--text-primary) !important;
+}
+
+/* Settings and Help card subtitles */
+[data-theme="dark"] .text-surface-500 {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .text-surface-600 {
+  color: var(--text-secondary) !important;
+}
+
+/* Input placeholders */
+[data-theme="dark"] .sf-input {
+  background: #252840 !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-light) !important;
+}
+
+[data-theme="dark"] .sf-input:disabled,
+[data-theme="dark"] input:disabled {
+  background: #1e2035 !important;
+  color: var(--text-muted) !important;
+}
+
+/* Change password and similar ghost buttons */
+[data-theme="dark"] [style*="border: '1px solid #E5E7EB'"],
+[data-theme="dark"] [style*="border: 1px solid #E5E7EB"] {
+  border-color: var(--border-light) !important;
+  color: var(--text-primary) !important;
+  background: #252840 !important;
+}
+
+/* Session length buttons (25m 45m etc) */
+[data-theme="dark"] [style*="border: '1.5px solid #6C5CE7'"],
+[data-theme="dark"] [style*="border: 1.5px solid #6C5CE7"] {
+  background: rgba(108,92,231,0.15) !important;
+}
+
+[data-theme="dark"] [style*="border: '1px solid #E5E7EB'"][style*="background: '#fff'"],
+[data-theme="dark"] [style*="border: 1px solid #E5E7EB"][style*="background: #fff"] {
+  background: #252840 !important;
+  color: var(--text-secondary) !important;
+}
+
+/* Divider lines */
+[data-theme="dark"] [style*="borderBottom: '1px solid #F0F0F2'"],
+[data-theme="dark"] [style*="border-bottom: 1px solid #F0F0F2"] {
+  border-color: var(--border-light) !important;
+}
+
+/* All min-h screen content */
+[data-theme="dark"] .max-w-5xl,
+[data-theme="dark"] .max-w-4xl,
+[data-theme="dark"] .max-w-3xl {
+  color: var(--text-primary);
+}
+
+/* Gradient text should stay gradient */
+[data-theme="dark"] .gradient-text {
+  color: transparent !important;
+}
+
+/* ── Tailwind class dark mode overrides (DailyPlanTable) ─────────────────── */
+
+[data-theme="dark"] .bg-white {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .bg-primary-50,
+[data-theme="dark"] .bg-primary-50\/50,
+[data-theme="dark"] .bg-primary-50\/80 {
+  background-color: rgba(108, 92, 231, 0.15) !important;
+}
+
+[data-theme="dark"] .bg-surface-50,
+[data-theme="dark"] .bg-surface-100 {
+  background-color: #252840 !important;
+}
+
+[data-theme="dark"] .text-surface-900 { color: var(--text-primary) !important; }
+[data-theme="dark"] .text-surface-800 { color: var(--text-primary) !important; }
+[data-theme="dark"] .text-surface-600 { color: var(--text-secondary) !important; }
+[data-theme="dark"] .text-surface-500 { color: var(--text-muted) !important; }
+[data-theme="dark"] .text-surface-400 { color: var(--text-muted) !important; }
+
+[data-theme="dark"] .border-surface-200 { border-color: var(--border-light) !important; }
+[data-theme="dark"] .border-surface-300 { border-color: #3D4168 !important; }
+
+/* Status badges */
+[data-theme="dark"] .bg-emerald-50 { background-color: rgba(0, 210, 160, 0.15) !important; }
+[data-theme="dark"] .text-emerald-600 { color: #00D2A0 !important; }
+[data-theme="dark"] .bg-red-50 { background-color: rgba(255, 107, 107, 0.15) !important; }
+[data-theme="dark"] .text-red-500 { color: #FF6B6B !important; }
+[data-theme="dark"] .bg-amber-50 { background-color: rgba(254, 202, 87, 0.15) !important; }
+[data-theme="dark"] .text-amber-600 { color: #FECA57 !important; }
+
+/* Input cells in table */
+[data-theme="dark"] input.bg-white {
+  background-color: #2D3148 !important;
+  color: var(--text-primary) !important;
+  border-color: #6C5CE7 !important;
+}
+
+/* Hover states */
+[data-theme="dark"] .hover\:bg-white:hover { background-color: #2D3148 !important; }
+[data-theme="dark"] .hover\:bg-surface-50:hover { background-color: #252840 !important; }
+[data-theme="dark"] .hover\:bg-primary-100:hover { background-color: rgba(108,92,231,0.2) !important; }
+
+/* Sticky table cells */
+[data-theme="dark"] td.sticky { 
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Badge base */
+[data-theme="dark"] .badge {
+  color: inherit;
+}
+
+/* Mark complete / bottom buttons */
+[data-theme="dark"] .btn-secondary,
+[data-theme="dark"] [class*="bg-white"][class*="border"] {
+  background-color: #2D3148 !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-light) !important;
+}
+
+/* ── Dashboard dark mode fixes ───────────────────────────────────────────────*/
+
+/* All buttons with white/light backgrounds */
+[data-theme="dark"] button {
+  color: inherit;
+}
+
+/* Today button and similar light pills */
+[data-theme="dark"] [style*="background: #fff"],
+[data-theme="dark"] [style*="background: white"],
+[data-theme="dark"] [style*="backgroundColor: '#fff'"],
+[data-theme="dark"] [style*="background-color: white"] {
+  background: #2D3148 !important;
+  color: var(--text-primary) !important;
+}
+
+/* Table cells and rows */
+[data-theme="dark"] table,
+[data-theme="dark"] td,
+[data-theme="dark"] th,
+[data-theme="dark"] tr {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-light) !important;
+}
+
+[data-theme="dark"] tr:hover td {
+  background: #252840 !important;
+}
+
+/* Selected/active row highlight */
+[data-theme="dark"] tr[style*="background"] td {
+  background: inherit !important;
+}
+
+/* Number inputs in log progress */
+[data-theme="dark"] input[type="number"] {
+  background: #2D3148 !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-light) !important;
+}
+
+/* Select dropdowns (status selector) */
+[data-theme="dark"] select {
+  background: #2D3148 !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-light) !important;
+}
+
+/* Log Progress panel */
+[data-theme="dark"] [style*="background: #F9FAFB"],
+[data-theme="dark"] [style*="background: rgb(249, 250, 251)"] {
+  background: #252840 !important;
+}
+
+/* White rounded boxes (Done button, status badges) */
+[data-theme="dark"] [style*="borderRadius"][style*="background: #fff"],
+[data-theme="dark"] [style*="border-radius"][style*="background: white"] {
+  background: #2D3148 !important;
+  color: var(--text-primary) !important;
+}
+
+/* Status text colors that disappear */
+[data-theme="dark"] [style*="color: #10B981"],
+[data-theme="dark"] [style*="color: #059669"] {
+  color: #00D2A0 !important;
+}
+
+/* Stat cards on dashboard */
+[data-theme="dark"] .sf-card [style*="color: #"] {
+  color: inherit;
+}
+
+/* Subject name labels next to dots in log progress */
+[data-theme="dark"] [style*="fontSize: 13"][style*="color: #"] {
+  color: var(--text-primary) !important;
+}
+
+/* Gray/muted text */  
+[data-theme="dark"] [style*="color: #6B7280"] {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] [style*="color: #9CA3AF"] {
+  color: var(--text-muted) !important;
+}
+
+/* Week navigation text */
+[data-theme="dark"] [style*="color: #374151"] {
+  color: var(--text-primary) !important;
+}
+
+/* Editable cells on hover */
+[data-theme="dark"] .editable-cell:hover {
+  background: rgba(108, 92, 231, 0.08) !important;
+}
+
+/* Progress bar track */
+[data-theme="dark"] .progress-bar {
+  background: #2D3148 !important;
+}
+
+/* Analytics charts area */
+[data-theme="dark"] .recharts-cartesian-grid line {
+  stroke: var(--border-light) !important;
+}
+
+[data-theme="dark"] .recharts-text {
+  fill: var(--text-muted) !important;
+}
+
 /* ========== Animations ========== */
 @keyframes gradient-x {
   0%, 100% { background-position: 0% 50%; }

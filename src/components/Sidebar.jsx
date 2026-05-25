@@ -39,7 +39,7 @@ const Sidebar = ({ hasPlan, isOpen, onClose }) => {
     <>
       {isOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={onClose} />}
       <aside
-        className={`fixed top-0 left-0 h-full w-[240px] z-50 flex flex-col transition-transform duration-300 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed top-0 left-0 h-full w-[204px] z-50 flex flex-col transition-transform duration-300 md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
         style={{ background: '#1A1D2E' }}
       >
         <div className="flex items-center justify-between px-5 h-16">

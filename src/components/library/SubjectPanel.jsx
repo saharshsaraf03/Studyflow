@@ -46,7 +46,7 @@ const SubjectPanel = ({
 
   return (
     <aside style={{
-      width: 296, height: '100%', flexShrink: 0,
+      width: 252, height: '100%', flexShrink: 0,
       background: '#FFFFFF', borderRight: '1px solid #E5E7EB',
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
     }}>

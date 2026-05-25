@@ -13,8 +13,8 @@ import { useNavigate } from 'react-router-dom';
 const SettingCard = ({ title, subtitle, children }) => (
   <div className="sf-card" style={{ padding: 24 }}>
     <div style={{ marginBottom: 18 }}>
-      <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1A1D2E', margin: 0 }}>{title}</h3>
-      {subtitle && <p style={{ fontSize: 13, color: '#9CA3AF', margin: '4px 0 0 0' }}>{subtitle}</p>}
+      <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{title}</h3>
+      {subtitle && <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '4px 0 0 0' }}>{subtitle}</p>}
     </div>
     {children}
   </div>
@@ -24,11 +24,11 @@ const SettingRow = ({ label, sub, control, last }) => (
   <div style={{
     display: 'flex', alignItems: 'center', gap: 16,
     padding: '14px 0',
-    borderBottom: last ? 'none' : '1px solid #F0F0F2',
+    borderBottom: last ? 'none' : '1px solid var(--border-light)',
   }}>
     <div style={{ flex: 1 }}>
-      <div style={{ fontSize: 14, fontWeight: 500, color: '#1A1D2E' }}>{label}</div>
-      {sub && <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>{sub}</div>}
+      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{label}</div>
+      {sub && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{sub}</div>}
     </div>
     {control}
   </div>
@@ -103,10 +103,16 @@ const SettingsPage = () => {
   const { user, getToken } = useAuth();
   const { theme, setTheme } = useTheme();
 
-  // Profile state
-  const [name, setName] = useState(user?.name || '');
-  const [university, setUniversity] = useState('');
-  const [fieldOfStudy, setFieldOfStudy] = useState('');
+  // Profile state — load from localStorage for persistence
+  const savedProfile = JSON.parse(localStorage.getItem('sf_profile') || '{}');
+  const [name, setName] = useState(user?.name || savedProfile.name || '');
+  const [university, setUniversity] = useState(savedProfile.university || '');
+  const [fieldOfStudy, setFieldOfStudy] = useState(savedProfile.fieldOfStudy || '');
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordMsg, setPasswordMsg] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -124,11 +130,27 @@ const SettingsPage = () => {
 
   const handleSaveProfile = async () => {
     setProfileSaving(true);
-    // Simulate save — in a full implementation this would update Cognito attributes
-    await new Promise(r => setTimeout(r, 800));
+    // Save to localStorage for persistence
+    localStorage.setItem('sf_profile', JSON.stringify({ name, university, fieldOfStudy }));
+    await new Promise(r => setTimeout(r, 600));
     setProfileSaving(false);
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 3000);
+  };
+
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword) { setPasswordMsg('Please fill in both fields.'); return; }
+    if (newPassword.length < 8) { setPasswordMsg('New password must be at least 8 characters.'); return; }
+    setPasswordLoading(true); setPasswordMsg('');
+    try {
+      const { changePassword } = await import('../utils/auth');
+      await changePassword(oldPassword, newPassword);
+      setPasswordMsg('Password changed successfully!');
+      setOldPassword(''); setNewPassword('');
+      setTimeout(() => { setShowChangePassword(false); setPasswordMsg(''); }, 2000);
+    } catch (err) {
+      setPasswordMsg(err.message || 'Failed to change password. Check your current password.');
+    } finally { setPasswordLoading(false); }
   };
 
   const handleExportData = async () => {
@@ -274,8 +296,8 @@ const SettingsPage = () => {
 
         {/* Header */}
         <div className="mb-8">
-          <h1 style={{ fontSize: 28, fontWeight: 700, color: '#1A1D2E', margin: '0 0 4px' }}>Settings</h1>
-          <p style={{ fontSize: 14, color: '#9CA3AF', margin: 0 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>Settings</h1>
+          <p style={{ fontSize: 14, color: 'var(--text-muted)', margin: 0 }}>
             Manage your account, preferences and data
           </p>
         </div>
@@ -297,7 +319,7 @@ const SettingsPage = () => {
                   }}>
                     {getInitials(name || user?.name)}
                   </div>
-                  <span style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
                     JPG, PNG up to 2 MB
                   </span>
                 </div>
@@ -305,7 +327,7 @@ const SettingsPage = () => {
                 {/* Fields */}
                 <div style={{ flex: 1, minWidth: 280, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
                       Full name
                     </label>
                     <input
@@ -316,7 +338,7 @@ const SettingsPage = () => {
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
                       Email
                     </label>
                     <div style={{ position: 'relative' }}>
@@ -338,7 +360,7 @@ const SettingsPage = () => {
                     </div>
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
                       University
                     </label>
                     <input
@@ -350,7 +372,7 @@ const SettingsPage = () => {
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
                       Field of study
                     </label>
                     <input
@@ -384,16 +406,43 @@ const SettingsPage = () => {
                   )}
                 </button>
                 <button
+                  onClick={() => setShowChangePassword(v => !v)}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
                     height: 38, padding: '0 18px', fontSize: 13, fontWeight: 500,
-                    borderRadius: 10, border: '1px solid #E5E7EB', background: '#fff',
-                    color: '#374151', cursor: 'pointer',
+                    borderRadius: 10, border: '1px solid var(--border-light)', background: 'var(--bg-card)',
+                    color: 'var(--text-primary)', cursor: 'pointer',
                   }}
                 >
                   <KeyRound size={14} /> Change password
                 </button>
               </div>
+
+              {showChangePassword && (
+                <div style={{ marginTop: 16, padding: 16, borderRadius: 12, background: 'var(--bg-primary)', border: '1px solid var(--border-light)' }}>
+                  <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 12px' }}>Change Password</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Current password</label>
+                      <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)}
+                        className="sf-input" style={{ width: '100%' }} placeholder="••••••••" />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>New password</label>
+                      <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                        className="sf-input" style={{ width: '100%' }} placeholder="Min. 8 characters" />
+                    </div>
+                  </div>
+                  {passwordMsg && (
+                    <p style={{ fontSize: 12, color: passwordMsg.includes('success') ? '#00B488' : '#FF6B6B', marginBottom: 10 }}>{passwordMsg}</p>
+                  )}
+                  <button onClick={handleChangePassword} disabled={passwordLoading}
+                    className="btn-primary"
+                    style={{ height: 36, padding: '0 16px', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: passwordLoading ? 0.7 : 1 }}>
+                    {passwordLoading ? 'Updating...' : 'Update Password'}
+                  </button>
+                </div>
+              )}
             </SettingCard>
           </div>
 
@@ -454,8 +503,8 @@ const SettingsPage = () => {
                       style={{
                         height: 32, padding: '0 12px', borderRadius: 8,
                         border: sessionLength === mins ? '1.5px solid #6C5CE7' : '1px solid #E5E7EB',
-                        background: sessionLength === mins ? 'rgba(108,92,231,0.08)' : '#fff',
-                        color: sessionLength === mins ? '#6C5CE7' : '#6B7280',
+                        background: sessionLength === mins ? 'rgba(108,92,231,0.08)' : 'var(--bg-card)',
+                        color: sessionLength === mins ? '#6C5CE7' : 'var(--text-secondary)',
                         fontSize: 12, fontWeight: 600, cursor: 'pointer',
                         transition: 'all 0.15s',
                       }}
@@ -530,8 +579,8 @@ const SettingsPage = () => {
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
                     height: 34, padding: '0 14px', borderRadius: 8,
-                    border: '1px solid #E5E7EB', background: '#fff',
-                    color: '#374151', fontSize: 12, fontWeight: 500,
+                    border: '1px solid var(--border-light)', background: 'var(--bg-card)',
+                    color: 'var(--text-primary)', fontSize: 12, fontWeight: 500,
                     cursor: exporting ? 'not-allowed' : 'pointer',
                     opacity: exporting ? 0.6 : 1,
                   }}

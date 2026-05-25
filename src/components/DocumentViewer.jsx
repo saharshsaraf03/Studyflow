@@ -1,197 +1,226 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, X } from 'lucide-react';
-import useTextSelection from '../hooks/useTextSelection';
-import ExplainPopover from './ExplainPopover';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Upload, Loader2, FileText } from 'lucide-react';
 
 /**
- * DocumentViewer — renders extractedText with:
- * 1. Topic search: Option C layout (excerpt list left + full text right with highlights)
- * 2. Text selection → ExplainPopover ("Ask AI About This")
+ * DocumentViewer — renders a PDF file visually using pdf.js canvas rendering
+ * Looks like Google Drive / browser PDF viewer
+ *
+ * Props:
+ *   file: File object (if available from current session)
+ *   fileName: string (shown when file not available)
+ *   onRequestFile: () => void (called when user needs to re-select file)
  */
+const DocumentViewer = ({ file, fileName, onRequestFile }) => {
+  const [pdf, setPdf] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [scale, setScale] = useState(1.2);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [needsFile, setNeedsFile] = useState(!file);
+  const canvasRef = useRef(null);
+  const renderTaskRef = useRef(null);
+  const fileInputRef = useRef(null);
 
-const MAX_DISPLAY_CHARS = 50000;
-const EXCERPT_CONTEXT_CHARS = 300;
-const MAX_EXCERPTS = 5;
+  const loadPDF = useCallback(async (fileOrUrl) => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const pdfjsLib = await import('pdfjs-dist');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+        'pdfjs-dist/build/pdf.worker.mjs', import.meta.url,
+      ).toString();
 
-/** Score a paragraph by how many query terms it contains */
-function scoreChunk(chunk, queryTerms) {
-  const lower = chunk.toLowerCase();
-  return queryTerms.reduce((acc, term) => {
-    const regex = new RegExp(term.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-    return acc + (lower.match(regex) || []).length;
-  }, 0);
-}
+      let source;
+      if (fileOrUrl instanceof File) {
+        const arrayBuffer = await fileOrUrl.arrayBuffer();
+        source = { data: arrayBuffer };
+      } else {
+        source = { url: fileOrUrl };
+      }
 
-/** Split raw text into searchable paragraphs */
-function splitIntoParagraphs(text) {
-  const byDouble = text.split(/\n\n+/);
-  if (byDouble.length > 3) return byDouble.filter(p => p.trim().length > 20);
-  // Fallback: split into 300-char windows
-  const chunks = [];
-  for (let i = 0; i < text.length; i += 250) {
-    chunks.push(text.slice(i, i + 300));
-  }
-  return chunks;
-}
-
-/** Wrap query terms in <mark> tags for highlighting */
-function highlightText(text, queryTerms) {
-  if (!queryTerms.length) return text;
-  let result = text;
-  queryTerms.forEach(term => {
-    if (!term) return;
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    result = result.replace(
-      new RegExp(`(${escaped})`, 'gi'),
-      '<mark class="bg-yellow-200 text-yellow-900 rounded px-0.5">$1</mark>'
-    );
-  });
-  return result;
-}
-
-const DocumentViewer = ({ extractedText }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeExcerptIdx, setActiveExcerptIdx] = useState(null);
-
-  const textRef = useRef(null);
-  const fullTextRef = useRef(null);
-  const excerptRefs = useRef([]);
-
-  const { selectedText, position, clearSelection } = useTextSelection(textRef);
-
-  const displayText = extractedText
-    ? extractedText.slice(0, MAX_DISPLAY_CHARS)
-    : '';
-
-  const isTruncated = extractedText && extractedText.length > MAX_DISPLAY_CHARS;
-
-  // ── Search logic ──────────────────────────────────────────
-  const queryTerms = useMemo(() =>
-    searchQuery.trim().length > 1
-      ? searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean)
-      : [],
-    [searchQuery]
-  );
-
-  const excerpts = useMemo(() => {
-    if (!queryTerms.length || !displayText) return [];
-    const paragraphs = splitIntoParagraphs(displayText);
-    return paragraphs
-      .map(p => ({ text: p, score: scoreChunk(p, queryTerms) }))
-      .filter(p => p.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_EXCERPTS)
-      .map(p => p.text);
-  }, [queryTerms, displayText]);
-
-  // ── Scroll full text to excerpt ───────────────────────────
-  const handleExcerptClick = (excerpt, idx) => {
-    setActiveExcerptIdx(idx);
-    if (!fullTextRef.current) return;
-    const firstLine = excerpt.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const container = fullTextRef.current;
-    const html = container.innerHTML;
-    const pos = html.toLowerCase().indexOf(firstLine.toLowerCase());
-    if (pos !== -1) {
-      // Estimate scroll position based on character position ratio
-      const ratio = pos / html.length;
-      container.scrollTop = ratio * container.scrollHeight;
+      const loadedPdf = await pdfjsLib.getDocument(source).promise;
+      setPdf(loadedPdf);
+      setTotalPages(loadedPdf.numPages);
+      setCurrentPage(1);
+      setNeedsFile(false);
+    } catch (err) {
+      setError('Failed to load PDF. Please try re-selecting the file.');
+    } finally {
+      setIsLoading(false);
     }
+  }, []);
+
+  // Load if file provided
+  useEffect(() => {
+    if (file) loadPDF(file);
+  }, [file]);
+
+  // Render current page to canvas
+  useEffect(() => {
+    if (!pdf || !canvasRef.current) return;
+
+    const renderPage = async () => {
+      // Cancel any ongoing render
+      if (renderTaskRef.current) {
+        try { renderTaskRef.current.cancel(); } catch {}
+      }
+
+      const page = await pdf.getPage(currentPage);
+      const viewport = page.getViewport({ scale });
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      const ctx = canvas.getContext('2d');
+      const renderContext = { canvasContext: ctx, viewport };
+      renderTaskRef.current = page.render(renderContext);
+
+      try {
+        await renderTaskRef.current.promise;
+      } catch (err) {
+        if (err?.name !== 'RenderingCancelledException') {
+          console.error('Render error:', err);
+        }
+      }
+    };
+
+    renderPage();
+  }, [pdf, currentPage, scale]);
+
+  const handleFileSelect = (e) => {
+    const f = e.target.files?.[0];
+    if (f && f.type === 'application/pdf') loadPDF(f);
   };
 
-  const highlightedHtml = useMemo(() =>
-    queryTerms.length ? highlightText(displayText, queryTerms) : displayText,
-    [displayText, queryTerms]
-  );
+  const goToPrev = () => setCurrentPage(p => Math.max(1, p - 1));
+  const goToNext = () => setCurrentPage(p => Math.min(totalPages, p + 1));
+  const zoomIn = () => setScale(s => Math.min(3, s + 0.2));
+  const zoomOut = () => setScale(s => Math.max(0.5, s - 0.2));
+
+  if (needsFile) {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', gap: 16, padding: 40, textAlign: 'center',
+      }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: 16,
+          background: 'rgba(108,92,231,0.10)', color: '#6C5CE7',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <FileText size={32} />
+        </div>
+        <div>
+          <p style={{ fontSize: 15, fontWeight: 600, color: '#1A1D2E', margin: '0 0 6px' }}>
+            {fileName || 'Select PDF to view'}
+          </p>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
+            Re-select the PDF file to render it visually
+          </p>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf"
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="btn-primary"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            height: 40, padding: '0 20px', fontSize: 13,
+          }}
+        >
+          <Upload size={15} /> Select PDF File
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Search bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-400 pointer-events-none" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={e => { setSearchQuery(e.target.value); setActiveExcerptIdx(null); }}
-          placeholder="Search topics in this document..."
-          className="sf-input pl-9 pr-8 w-full text-sm"
-        />
-        {searchQuery && (
-          <button onClick={() => { setSearchQuery(''); setActiveExcerptIdx(null); }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-600">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Toolbar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 16px', background: '#2D2D2D',
+        borderBottom: '1px solid #404040', flexShrink: 0,
+        borderRadius: '12px 12px 0 0',
+      }}>
+        {/* Page navigation */}
+        <button onClick={goToPrev} disabled={currentPage <= 1}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: '#444', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: currentPage <= 1 ? 'not-allowed' : 'pointer', opacity: currentPage <= 1 ? 0.4 : 1 }}>
+          <ChevronLeft size={16} />
+        </button>
+        <span style={{ fontSize: 13, color: '#E0E0E0', minWidth: 80, textAlign: 'center' }}>
+          {isLoading ? '...' : `${currentPage} / ${totalPages}`}
+        </span>
+        <button onClick={goToNext} disabled={currentPage >= totalPages}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: '#444', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer', opacity: currentPage >= totalPages ? 0.4 : 1 }}>
+          <ChevronRight size={16} />
+        </button>
+
+        <div style={{ width: 1, height: 20, background: '#555', margin: '0 4px' }} />
+
+        {/* Zoom */}
+        <button onClick={zoomOut}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: '#444', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ZoomOut size={14} />
+        </button>
+        <span style={{ fontSize: 12, color: '#E0E0E0', minWidth: 44, textAlign: 'center' }}>
+          {Math.round(scale * 100)}%
+        </span>
+        <button onClick={zoomIn}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: '#444', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ZoomIn size={14} />
+        </button>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Re-select file */}
+        <input ref={fileInputRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleFileSelect} />
+        <button onClick={() => fileInputRef.current?.click()}
+          style={{ fontSize: 11, color: '#9CA3AF', background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 8px' }}>
+          Change file
+        </button>
       </div>
 
-      {/* Results count */}
-      {queryTerms.length > 0 && (
-        <p className="text-xs text-surface-400">
-          {excerpts.length > 0
-            ? `${excerpts.length} relevant section${excerpts.length > 1 ? 's' : ''} found`
-            : 'No matching sections found'}
-        </p>
-      )}
-
-      {/* Option C: two-panel layout when search active */}
-      <div className={`${queryTerms.length > 0 ? 'grid grid-cols-5 gap-4' : ''}`}>
-
-        {/* Left panel: excerpt list */}
-        {queryTerms.length > 0 && (
-          <div className="col-span-2 space-y-2">
-            <p className="text-xs font-medium text-surface-400 uppercase tracking-wider mb-2">Results</p>
-            {excerpts.length === 0 ? (
-              <div className="sf-card p-4 text-center">
-                <p className="text-xs text-surface-400">No matches found</p>
-              </div>
-            ) : (
-              excerpts.map((excerpt, idx) => (
-                <button
-                  key={idx}
-                  ref={el => excerptRefs.current[idx] = el}
-                  onClick={() => handleExcerptClick(excerpt, idx)}
-                  className={`w-full text-left p-3 rounded-xl border text-xs leading-relaxed transition-all ${
-                    activeExcerptIdx === idx
-                      ? 'border-primary-300 bg-primary-50 text-surface-800'
-                      : 'border-surface-200 bg-white text-surface-600 hover:border-primary-200 hover:bg-primary-50/50'
-                  }`}
-                >
-                  <span className="line-clamp-4">
-                    {excerpt.slice(0, EXCERPT_CONTEXT_CHARS)}
-                    {excerpt.length > EXCERPT_CONTEXT_CHARS ? '...' : ''}
-                  </span>
-                </button>
-              ))
-            )}
+      {/* Canvas area */}
+      <div style={{
+        flex: 1, overflowY: 'auto', overflowX: 'auto',
+        background: '#525659',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        padding: '20px 16px',
+        borderRadius: '0 0 12px 12px',
+      }}>
+        {isLoading ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#ccc', marginTop: 60 }}>
+            <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: 14 }}>Loading PDF...</span>
           </div>
-        )}
-
-        {/* Right panel (or full width): full text */}
-        <div className={queryTerms.length > 0 ? 'col-span-3' : 'col-span-5'}>
-          {queryTerms.length > 0 && (
-            <p className="text-xs font-medium text-surface-400 uppercase tracking-wider mb-2">Full Text</p>
-          )}
-          <div
-            ref={el => { textRef.current = el; fullTextRef.current = el; }}
-            className="relative rounded-xl border border-surface-200 bg-surface-50 p-4 overflow-y-auto text-xs leading-relaxed text-surface-700 font-mono select-text"
-            style={{ maxHeight: '420px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        ) : error ? (
+          <div style={{ color: '#FF6B6B', fontSize: 13, marginTop: 40, textAlign: 'center' }}>
+            <p>{error}</p>
+            <button onClick={() => fileInputRef.current?.click()}
+              style={{ marginTop: 12, color: '#6C5CE7', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+              Select file again
+            </button>
+          </div>
+        ) : (
+          <canvas
+            ref={canvasRef}
+            style={{
+              boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+              maxWidth: '100%',
+              display: 'block',
+            }}
           />
-          {isTruncated && (
-            <p className="mt-2 text-xs text-surface-400 text-center">
-              Document truncated for display (showing first 50,000 characters)
-            </p>
-          )}
-        </div>
+        )}
       </div>
-
-      {/* ExplainPopover — rendered outside panels to avoid clipping */}
-      <ExplainPopover
-        selectedText={selectedText}
-        position={position}
-        extractedText={displayText}
-        onClose={clearSelection}
-      />
     </div>
   );
 };
