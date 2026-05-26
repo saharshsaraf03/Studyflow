@@ -31,7 +31,7 @@ const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, isAn
   const hasAI = doc.hasAiResults;
 
   return (
-    <div className="sf-card" style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
+    <div className="sf-card" style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 14, position: 'relative', background: 'var(--bg-card)' }}>
       {/* File icon */}
       <div style={{
         width: 40, height: 40, borderRadius: 10,
@@ -43,10 +43,10 @@ const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, isAn
 
       {/* Info */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#1A1D2E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {doc.fileName}
         </div>
-        <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 1 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
           {formatSize(doc.fileSize)}{doc.fileSize ? ' · ' : ''}{formatDate(doc.uploadedAt)}
         </div>
       </div>
@@ -81,7 +81,7 @@ const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, isAn
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
           padding: '4px 10px', borderRadius: 99,
-          background: '#F5F5F7', color: '#6B7280',
+          background: 'var(--bg-primary)', color: 'var(--text-secondary)',
           fontSize: 12, fontWeight: 500, flexShrink: 0,
         }}>
           Not yet analyzed
@@ -106,7 +106,7 @@ const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, isAn
             <div style={{ position: 'fixed', inset: 0, zIndex: 10 }} onClick={() => setShowMenu(false)} />
             <div style={{
               position: 'absolute', right: 0, top: 34, zIndex: 20,
-              background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10,
+              background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: 10,
               boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 180, overflow: 'hidden',
             }}>
               {hasAI ? (
@@ -126,13 +126,13 @@ const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, isAn
               )}
               <button
                 onClick={() => { setShowMenu(false); onView(doc); }}
-                style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
               >
                 <BookOpen size={14} /> View Document
               </button>
               <button
                 onClick={() => { setShowMenu(false); onMove(doc); }}
-                style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
               >
                 <FolderInput size={14} /> Move to...
               </button>

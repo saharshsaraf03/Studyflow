@@ -6,8 +6,7 @@ import DocCard from './DocCard';
 import NotesEditor from './NotesEditor';
 import UploadModal from './UploadModal';
 import AnalysisPanel from './AnalysisPanel';
-import DocumentViewer from '../DocumentViewer';
-import { listCDocs, saveCDoc, deleteCDoc, analyzeCDoc, loadCNote, getCDoc } from '../../utils/api';
+import { listCDocs, saveCDoc, deleteCDoc, analyzeCDoc, loadCNote, getCDoc, uploadPdfToS3 } from '../../utils/api';
 
 /**
  * ChapterContent — right content area matching Claude Design
@@ -25,8 +24,7 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
   const [analyzingDocId, setAnalyzingDocId] = useState(null);
   const [analysisPanelDoc, setAnalysisPanelDoc] = useState(null);
   const [analysisPanelResults, setAnalysisPanelResults] = useState(null);
-  const [viewerDoc, setViewerDoc] = useState(null);
-  const [viewerFile, setViewerFile] = useState(null); // actual File object for PDF rendering
+  const [viewerDoc, setViewerDoc] = useState(null); // kept for compatibility
   const fileCache = React.useRef({}); // docId -> File blob cache
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [moveDoc_, setMoveDoc] = useState(null); // doc being moved
@@ -52,13 +50,22 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
   }, [chapter?.chapterId]);
 
   const handleUpload = useCallback(async ({ file, extractedText }) => {
+    // Step 1: Upload PDF to S3
+    const s3Result = await uploadPdfToS3({ file });
+    const { pdfUrl, s3Key, docId: s3DocId } = s3Result;
+
+    // Step 2: Save metadata + pdfUrl to DynamoDB
     const result = await saveCDoc({
+      docId: s3DocId,
       chapterId: chapter.chapterId,
       fileName: file.name,
       fileSize: file.size,
       extractedText,
       aiResults: null,
+      pdfUrl,
+      s3Key,
     });
+
     // Cache the file blob for same-session viewing
     fileCache.current[result.docId] = file;
     setDocs(prev => [...prev, {
@@ -68,6 +75,7 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
       fileSize: file.size,
       uploadedAt: new Date().toISOString(),
       hasAiResults: false,
+      pdfUrl,
     }]);
     if (onDocCountChange) onDocCountChange(chapter.chapterId, 1);
     setShowUpload(false);
@@ -103,14 +111,30 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
   }, [chapter, analysisPanelDoc]);
 
   const handleViewDoc = useCallback(async (doc) => {
+    // If we have a cached file blob from this session, create object URL and open
+    const cachedFile = fileCache.current[doc.docId];
+    if (cachedFile) {
+      const url = URL.createObjectURL(cachedFile);
+      window.open(url, '_blank');
+      return;
+    }
+    // Use pdfUrl from S3 — open directly in new tab
+    if (doc.pdfUrl) {
+      window.open(doc.pdfUrl, '_blank');
+      return;
+    }
+    // Fall back to full fetch
     try {
       const result = await getCDoc(chapter.chapterId, doc.docId);
-      setViewerDoc(result.doc || doc);
+      const fullDoc = result.doc || doc;
+      if (fullDoc.pdfUrl) {
+        window.open(fullDoc.pdfUrl, '_blank');
+      } else {
+        alert('No PDF available for this document. Please re-upload it.');
+      }
     } catch {
-      setViewerDoc(doc);
+      alert('Failed to open document.');
     }
-    // Pass cached file if available
-    setViewerFile(fileCache.current[doc.docId] || null);
   }, [chapter]);
 
   const handleViewSummary = useCallback(async (doc) => {
@@ -327,19 +351,20 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
         <div style={{
           position: 'fixed', inset: 0, zIndex: 80,
           background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-        }} onClick={() => { setViewerDoc(null); setViewerFile(null); }}>
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 24px',
+        }} onClick={() => { setViewerDoc(null); setViewerFile(null); setViewerPdfUrl(null); }}>
           <div style={{
-            background: '#fff', borderRadius: 16, width: '100%', maxWidth: 760, maxHeight: '85vh',
+            background: '#fff', borderRadius: 16, width: '100%', maxWidth: 1100, height: '92vh',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid #E5E7EB' }}>
               <span style={{ fontSize: 15, fontWeight: 600, color: '#1A1D2E', flex: 1 }}>{viewerDoc.fileName}</span>
-              <button onClick={() => { setViewerDoc(null); setViewerFile(null); }} style={{ width: 28, height: 28, borderRadius: 7, background: '#F5F5F7', border: 'none', color: '#6B7280', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>✕</button>
+              <button onClick={() => { setViewerDoc(null); setViewerFile(null); setViewerPdfUrl(null); }} style={{ width: 28, height: 28, borderRadius: 7, background: '#F5F5F7', border: 'none', color: '#6B7280', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <DocumentViewer
                 file={viewerFile}
+                pdfUrl={viewerPdfUrl}
                 fileName={viewerDoc.fileName}
               />
             </div>

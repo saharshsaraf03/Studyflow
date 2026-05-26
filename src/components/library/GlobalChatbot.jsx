@@ -170,7 +170,7 @@ const GlobalChatbot = () => {
             style={{
               position: 'fixed', bottom: 28, right: 28, zIndex: 49,
               width: panelWidth, height: panelHeight,
-              background: '#fff', borderRadius: 20,
+              background: 'var(--bg-card)', borderRadius: 20,
               boxShadow: '0 20px 60px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)',
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
               animation: 'slideUpFade 0.28s cubic-bezier(0.4,0,0.2,1)',
@@ -255,10 +255,10 @@ const GlobalChatbot = () => {
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     padding: '10px 14px', borderRadius: 12, marginBottom: 14,
-                    background: 'rgba(108,92,231,0.06)', border: '1px solid rgba(108,92,231,0.12)',
+                    background: 'rgba(108,92,231,0.10)', border: '1px solid rgba(108,92,231,0.20)',
                   }}>
                     <BookOpen size={14} style={{ color: '#6C5CE7', flexShrink: 0 }} />
-                    <p style={{ fontSize: 12, color: '#6C5CE7', margin: 0, lineHeight: 1.5 }}>
+                    <p style={{ fontSize: 12, color: '#8B82F0', margin: 0, lineHeight: 1.5 }}>
                       Ask me anything about your library. I'll search across all your uploaded documents to answer.
                     </p>
                   </div>
@@ -278,13 +278,13 @@ const GlobalChatbot = () => {
                         }}
                         onMouseEnter={e => {
                           e.currentTarget.style.borderColor = '#6C5CE7';
-                          e.currentTarget.style.background = 'rgba(108,92,231,0.04)';
+                          e.currentTarget.style.background = 'rgba(108,92,231,0.15)';
                           e.currentTarget.style.color = '#6C5CE7';
                         }}
                         onMouseLeave={e => {
-                          e.currentTarget.style.borderColor = '#E5E7EB';
-                          e.currentTarget.style.background = '#FAFAFA';
-                          e.currentTarget.style.color = '#374151';
+                          e.currentTarget.style.borderColor = 'var(--border-light)';
+                          e.currentTarget.style.background = 'var(--bg-primary)';
+                          e.currentTarget.style.color = 'var(--text-primary)';
                         }}
                       >
                         {q}
@@ -315,11 +315,11 @@ const GlobalChatbot = () => {
                       ? 'linear-gradient(135deg, #6C5CE7, #5B4ED4)'
                       : msg.role === 'error'
                         ? 'rgba(255,107,107,0.08)'
-                        : '#F5F5F7',
+                        : 'var(--bg-primary)',
                     color: msg.role === 'user' ? '#fff'
                       : msg.role === 'error' ? '#FF6B6B'
-                      : '#1A1D2E',
-                    border: msg.role === 'error' ? '1px solid rgba(255,107,107,0.2)' : 'none',
+                      : 'var(--text-primary)',
+                    border: msg.role === 'error' ? '1px solid rgba(255,107,107,0.2)' : msg.role === 'user' ? 'none' : '1px solid var(--border-light)',
                   }}>
                     {msg.content}
                   </div>
@@ -333,8 +333,8 @@ const GlobalChatbot = () => {
                       <BookOpen size={10} style={{ color: '#9CA3AF', flexShrink: 0 }} />
                       {msg.sources.map((s, si) => (
                         <span key={si} style={{
-                          fontSize: 10, color: '#9CA3AF',
-                          background: '#F5F5F7', padding: '2px 7px',
+                          fontSize: 10, color: 'var(--text-muted)',
+                          background: 'var(--bg-primary)', padding: '2px 7px',
                           borderRadius: 99, whiteSpace: 'nowrap',
                           overflow: 'hidden', textOverflow: 'ellipsis',
                           maxWidth: 140,
@@ -351,7 +351,7 @@ const GlobalChatbot = () => {
                   <span style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 3, padding: '0 4px' }}>AI</span>
                   <div style={{
                     padding: '10px 14px', borderRadius: '14px 14px 14px 4px',
-                    background: '#F5F5F7', display: 'flex', gap: 4, alignItems: 'center',
+                    background: 'var(--bg-primary)', display: 'flex', gap: 4, alignItems: 'center',
                   }}>
                     <span style={{ fontSize: 11, color: '#9CA3AF', marginRight: 4 }}>Searching library</span>
                     {[0, 150, 300].map(d => (
@@ -372,7 +372,7 @@ const GlobalChatbot = () => {
               <div style={{ padding: '4px 16px', textAlign: 'right' }}>
                 <button
                   onClick={handleClearChat}
-                  style={{ fontSize: 11, color: '#9CA3AF', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  style={{ fontSize: 11, color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: 'pointer' }}
                 >
                   Clear chat
                 </button>
@@ -396,7 +396,7 @@ const GlobalChatbot = () => {
                 rows={1}
                 style={{
                   flex: 1, padding: '9px 12px', borderRadius: 12,
-                  border: '1.5px solid #E5E7EB', fontSize: 13, color: '#1A1D2E',
+                  border: '1.5px solid var(--border-light)', fontSize: 13, color: 'var(--text-primary)', background: 'var(--bg-primary)',
                   resize: 'none', outline: 'none', fontFamily: 'inherit',
                   lineHeight: 1.5, maxHeight: 80, overflowY: 'auto',
                   transition: 'border-color 0.15s',

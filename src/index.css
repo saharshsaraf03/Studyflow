@@ -667,6 +667,31 @@ body {
 
 
 
+
+/* ── Notes editor dark mode fix ─────────────────────────────────────────────*/
+[data-theme="dark"] [contenteditable] {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] [contenteditable]:empty:before {
+  color: var(--text-muted) !important;
+}
+
+/* Notes editor card wrapper */
+[data-theme="dark"] .sf-card [contenteditable] {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Notes toolbar save indicator area */
+[data-theme="dark"] .sf-card [style*="padding: '8px 18px'"],
+[data-theme="dark"] .sf-card [style*="padding: 8px 18px"] {
+  background: var(--bg-card) !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border-light) !important;
+}
+
 /* ── Help & Settings dark mode fixes ────────────────────────────────────────*/
 
 /* FAQ questions text */

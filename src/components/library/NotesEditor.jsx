@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
+import { useTheme } from '../../contexts/ThemeContext';
 import { Bold, Italic, Underline, Link, Code, List, ListOrdered } from 'lucide-react';
 import { saveCNote } from '../../utils/api';
 
@@ -8,6 +9,8 @@ import { saveCNote } from '../../utils/api';
  * Auto-saves with 2s debounce via DynamoDB
  */
 const NotesEditor = forwardRef(({ chapterId, initialContent = '', saveOverride = null }, ref) => {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const editorRef = useRef(null);
   const debounceRef = useRef(null);
 
@@ -49,6 +52,10 @@ const NotesEditor = forwardRef(({ chapterId, initialContent = '', saveOverride =
       [contenteditable] li { margin-bottom: 4px; line-height: 1.6; }
       [contenteditable] strong { font-weight: 700; color: #1A1D2E; }
       [contenteditable] pre { background: #F5F5F7; padding: 8px 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+      [data-theme="dark"] [contenteditable] { background: #1A1D2E !important; color: #F1F5F9 !important; }
+      [data-theme="dark"] [contenteditable] h3 { color: #F1F5F9 !important; }
+      [data-theme="dark"] [contenteditable] strong { color: #F1F5F9 !important; }
+      [data-theme="dark"] [contenteditable] pre { background: #252840 !important; color: #F1F5F9 !important; }
     `;
     document.head.appendChild(style);
     return () => document.head.removeChild(style);
@@ -136,7 +143,7 @@ const NotesEditor = forwardRef(({ chapterId, initialContent = '', saveOverride =
   ];
 
   return (
-    <div className="sf-card" style={{ overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 280 }}>
+    <div className="sf-card" style={{ overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 280, background: isDark ? '#1A1D2E' : '#ffffff' }}>
       {/* Toolbar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 4,
@@ -182,9 +189,9 @@ const NotesEditor = forwardRef(({ chapterId, initialContent = '', saveOverride =
         data-placeholder="Start writing your notes here..."
         style={{
           flex: 1, padding: '16px 22px', fontSize: 13, lineHeight: 1.65,
-          color: '#374151', outline: 'none', overflowY: 'auto',
+          color: isDark ? '#F1F5F9' : '#374151', outline: 'none', overflowY: 'auto',
           overflowX: 'hidden', wordBreak: 'break-word', wordWrap: 'break-word',
-          minHeight: 200,
+          minHeight: 200, background: isDark ? '#1A1D2E' : '#ffffff',
         }}
       />
 

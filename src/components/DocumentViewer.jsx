@@ -10,14 +10,14 @@ import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Upload, Loader2, FileText }
  *   fileName: string (shown when file not available)
  *   onRequestFile: () => void (called when user needs to re-select file)
  */
-const DocumentViewer = ({ file, fileName, onRequestFile }) => {
+const DocumentViewer = ({ file, pdfUrl, fileName, onRequestFile }) => {
   const [pdf, setPdf] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [scale, setScale] = useState(1.2);
+  const [scale, setScale] = useState(1.5);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [needsFile, setNeedsFile] = useState(!file);
+  const [needsFile, setNeedsFile] = useState(!file && !pdfUrl);
   const canvasRef = useRef(null);
   const renderTaskRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -51,10 +51,11 @@ const DocumentViewer = ({ file, fileName, onRequestFile }) => {
     }
   }, []);
 
-  // Load if file provided
+  // Load from file or URL
   useEffect(() => {
     if (file) loadPDF(file);
-  }, [file]);
+    else if (pdfUrl) loadPDF(pdfUrl);
+  }, [file, pdfUrl]);
 
   // Render current page to canvas
   useEffect(() => {
@@ -191,11 +192,12 @@ const DocumentViewer = ({ file, fileName, onRequestFile }) => {
 
       {/* Canvas area */}
       <div style={{
-        flex: 1, overflowY: 'auto', overflowX: 'auto',
+        flex: 1, overflowY: 'scroll', overflowX: 'auto',
         background: '#525659',
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         padding: '20px 16px',
         borderRadius: '0 0 12px 12px',
+        minHeight: 0,
       }}>
         {isLoading ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#ccc', marginTop: 60 }}>
@@ -217,6 +219,7 @@ const DocumentViewer = ({ file, fileName, onRequestFile }) => {
               boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
               maxWidth: '100%',
               display: 'block',
+              height: 'auto',
             }}
           />
         )}

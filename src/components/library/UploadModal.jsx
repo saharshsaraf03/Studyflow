@@ -51,7 +51,7 @@ const UploadModal = ({ chapterName, onUpload, onClose }) => {
     setProgress('Extracting text from PDF...');
     try {
       const extractedText = await extractTextFromPDF(file);
-      setProgress('Saving to your library...');
+      setProgress('Uploading to cloud storage...');
       await onUpload({ file, extractedText });
     } catch (err) {
       setError(err.message || 'Upload failed. Please try again.');

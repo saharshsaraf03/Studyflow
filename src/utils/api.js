@@ -293,3 +293,24 @@ export async function saveGlobalChat(messages) {
 export async function loadGlobalChat() {
   return apiFetch('/api/chat/load');
 }
+
+// ── PDF Upload to S3 ─────────────────────────────────────────────────────────
+
+export async function uploadPdfToS3({ file, docId }) {
+  // Convert File to base64
+  const base64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  return apiFetch('/api/docs/upload-pdf', {
+    method: 'POST',
+    body: JSON.stringify({
+      fileName: file.name,
+      fileBase64: base64,
+      docId,
+    }),
+  });
+}

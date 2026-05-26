@@ -72,7 +72,7 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
     <div style={{
       position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 60,
       width: Math.min(580, window.innerWidth - 240),
-      background: '#F5F5F7',
+      background: 'var(--bg-primary)',
       borderLeft: '1px solid #E5E7EB',
       boxShadow: '-8px 0 32px rgba(0,0,0,0.1)',
       display: 'flex', flexDirection: 'column',
@@ -83,7 +83,7 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px',
-        background: '#fff', borderBottom: '1px solid #E5E7EB', flexShrink: 0,
+        background: 'var(--bg-card)', borderBottom: '1px solid var(--border-light)', flexShrink: 0,
       }}>
         <div style={{
           width: 34, height: 34, borderRadius: 9,
@@ -99,7 +99,7 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
           <div style={{ fontSize: 11, color: '#9CA3AF' }}>AI Analysis</div>
         </div>
         <button onClick={onClose} style={{
-          width: 28, height: 28, borderRadius: 7, background: '#F5F5F7',
+          width: 28, height: 28, borderRadius: 7, background: 'var(--bg-primary)',
           border: 'none', color: '#6B7280', display: 'flex', alignItems: 'center',
           justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
         }}>
@@ -108,7 +108,7 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, padding: '10px 14px 0', flexShrink: 0, background: '#fff', borderBottom: '1px solid #F0F0F2' }}>
+      <div style={{ display: 'flex', gap: 4, padding: '10px 14px 0', flexShrink: 0, background: 'var(--bg-card)', borderBottom: '1px solid var(--border-light)' }}>
         {TABS.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setActiveTab(id)} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -151,7 +151,7 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
                         {SUGGESTED.map((q, i) => (
                           <button key={i} onClick={() => handleSend(q)} style={{
                             padding: '5px 10px', borderRadius: 99, fontSize: 12,
-                            border: '1px solid #E5E7EB', background: '#fff', color: '#6B7280',
+                            border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-secondary)',
                             cursor: 'pointer', transition: 'all 0.15s',
                           }}>{q}</button>
                         ))}
@@ -166,9 +166,9 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
                       <div style={{
                         maxWidth: '85%', padding: '8px 12px', fontSize: 13, lineHeight: 1.55,
                         whiteSpace: 'pre-wrap', borderRadius: 12,
-                        background: msg.role === 'user' ? 'rgba(108,92,231,0.08)' : msg.role === 'error' ? 'rgba(255,107,107,0.08)' : '#fff',
-                        border: `1px solid ${msg.role === 'user' ? 'rgba(108,92,231,0.2)' : msg.role === 'error' ? 'rgba(255,107,107,0.2)' : '#E5E7EB'}`,
-                        color: msg.role === 'error' ? '#FF6B6B' : '#374151',
+                        background: msg.role === 'user' ? 'rgba(108,92,231,0.12)' : msg.role === 'error' ? 'rgba(255,107,107,0.08)' : 'var(--bg-primary)',
+                        border: `1px solid ${msg.role === 'user' ? 'rgba(108,92,231,0.3)' : msg.role === 'error' ? 'rgba(255,107,107,0.2)' : 'var(--border-light)'}`,
+                        color: msg.role === 'error' ? '#FF6B6B' : 'var(--text-primary)',
                         borderRadius: msg.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
                       }}>
                         {msg.content}

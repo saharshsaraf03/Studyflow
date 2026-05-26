@@ -6,8 +6,7 @@ import DocCard from './DocCard';
 import NotesEditor from './NotesEditor';
 import UploadModal from './UploadModal';
 import AnalysisPanel from './AnalysisPanel';
-import DocumentViewer from '../DocumentViewer';
-import { listSDocs, saveSDoc, deleteSDoc, analyzeSDoc, loadSNote, getSDoc } from '../../utils/api';
+import { listSDocs, saveSDoc, deleteSDoc, analyzeSDoc, loadSNote, getSDoc, uploadPdfToS3 } from '../../utils/api';
 
 /**
  * SubjectContent — right content area when a subject is selected
@@ -29,6 +28,7 @@ const SubjectContent = ({ subject }) => {
   const [analysisPanelResults, setAnalysisPanelResults] = useState(null);
   const [viewerDoc, setViewerDoc] = useState(null);
   const [viewerFile, setViewerFile] = useState(null);
+  const [viewerPdfUrl, setViewerPdfUrl] = useState(null);
   const fileCache = React.useRef({});
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [moveDoc_, setMoveDoc] = useState(null);
@@ -53,12 +53,18 @@ const SubjectContent = ({ subject }) => {
   }, [subject?.subjectId]);
 
   const handleUpload = useCallback(async ({ file, extractedText }) => {
+    const s3Result = await uploadPdfToS3({ file });
+    const { pdfUrl, s3Key, docId: s3DocId } = s3Result;
+
     const result = await saveSDoc({
+      docId: s3DocId,
       subjectId: subject.subjectId,
       fileName: file.name,
       fileSize: file.size,
       extractedText,
       aiResults: null,
+      pdfUrl,
+      s3Key,
     });
     fileCache.current[result.docId] = file;
     setDocs(prev => [...prev, {
@@ -68,6 +74,7 @@ const SubjectContent = ({ subject }) => {
       fileSize: file.size,
       uploadedAt: new Date().toISOString(),
       hasAiResults: false,
+      pdfUrl,
     }]);
     setShowUpload(false);
   }, [subject]);
@@ -103,13 +110,28 @@ const SubjectContent = ({ subject }) => {
   }, [subject, analysisPanelDoc]);
 
   const handleViewDoc = useCallback(async (doc) => {
+    const cachedFile = fileCache.current[doc.docId];
+    if (cachedFile) {
+      const url = URL.createObjectURL(cachedFile);
+      window.open(url, '_blank');
+      return;
+    }
     try {
       const result = await getSDoc(subject.subjectId, doc.docId);
-      setViewerDoc(result.doc || doc);
+      const fullDoc = result.doc || doc;
+      const pdfUrl = fullDoc.pdfUrl || doc.pdfUrl || '';
+      if (pdfUrl && pdfUrl.startsWith('http')) {
+        window.open(pdfUrl, '_blank');
+      } else {
+        alert('No PDF available. Please re-upload this document.');
+      }
     } catch {
-      setViewerDoc(doc);
+      if (doc.pdfUrl && doc.pdfUrl.startsWith('http')) {
+        window.open(doc.pdfUrl, '_blank');
+      } else {
+        alert('Failed to open document.');
+      }
     }
-    setViewerFile(fileCache.current[doc.docId] || null);
   }, [subject]);
 
   const handleViewSummary = useCallback(async (doc) => {
@@ -333,19 +355,20 @@ const SubjectContent = ({ subject }) => {
         <div style={{
           position: 'fixed', inset: 0, zIndex: 80,
           background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-        }} onClick={() => { setViewerDoc(null); setViewerFile(null); }}>
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 24px',
+        }} onClick={() => { setViewerDoc(null); setViewerFile(null); setViewerPdfUrl(null); }}>
           <div style={{
-            background: '#fff', borderRadius: 16, width: '100%', maxWidth: 760, maxHeight: '85vh',
+            background: '#fff', borderRadius: 16, width: '100%', maxWidth: 1100, height: '92vh',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid #E5E7EB' }}>
               <span style={{ fontSize: 15, fontWeight: 600, color: '#1A1D2E', flex: 1 }}>{viewerDoc.fileName}</span>
-              <button onClick={() => { setViewerDoc(null); setViewerFile(null); }} style={{ width: 28, height: 28, borderRadius: 7, background: '#F5F5F7', border: 'none', color: '#6B7280', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>✕</button>
+              <button onClick={() => { setViewerDoc(null); setViewerFile(null); setViewerPdfUrl(null); }} style={{ width: 28, height: 28, borderRadius: 7, background: '#F5F5F7', border: 'none', color: '#6B7280', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <DocumentViewer
                 file={viewerFile}
+                pdfUrl={viewerPdfUrl}
                 fileName={viewerDoc.fileName}
               />
             </div>
