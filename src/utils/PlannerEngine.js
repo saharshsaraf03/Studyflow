@@ -397,15 +397,19 @@ export const calculateStats = (planData) => {
     const actualToday = Object.values(day.actual).reduce((a, b) => a + b, 0);
     
     totalPlannedHours += plannedToday;
-    totalActualHours += actualToday;
+    if (day.date <= new Date().toISOString().split('T')[0]) {
+      totalActualHours += actualToday;
+    }
     
     // Subject-level accumulation
     Object.entries(day.subjects).forEach(([name, hours]) => {
       subjectPlanned[name] = (subjectPlanned[name] || 0) + hours;
     });
-    Object.entries(day.actual).forEach(([name, hours]) => {
-      subjectActual[name] = (subjectActual[name] || 0) + hours;
-    });
+    if (day.date <= new Date().toISOString().split('T')[0]) {
+      Object.entries(day.actual).forEach(([name, hours]) => {
+        subjectActual[name] = (subjectActual[name] || 0) + hours;
+      });
+    }
     
     // Day status counting
     if (day.status === 'completed') {

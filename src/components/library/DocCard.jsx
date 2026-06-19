@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, MoreHorizontal, Trash2, Sparkles, Check, Loader2, BookOpen, BarChart2, FolderInput } from 'lucide-react';
+import { FileText, MoreHorizontal, Trash2, Sparkles, Check, Loader2, BookOpen, BarChart2, FolderInput, RefreshCw } from 'lucide-react';
 
 /**
  * DocCard — document row matching Claude Design
@@ -7,7 +7,7 @@ import { FileText, MoreHorizontal, Trash2, Sparkles, Check, Loader2, BookOpen, B
  *   - If hasAiResults: "View AI Summary", "View Document", Delete
  *   - If !hasAiResults: "Analyze with AI", "View Document", Delete
  */
-const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, isAnalyzing }) => {
+const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, onRetryIndex, isAnalyzing }) => {
   const [showMenu, setShowMenu] = useState(false);
 
   const formatSize = (bytes) => {
@@ -29,6 +29,14 @@ const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, isAn
   };
 
   const hasAI = doc.hasAiResults;
+  const embeddingStatus = doc.embeddingStatus;
+  const vectorLabel = embeddingStatus === 'ready'
+    ? `Vector indexed${doc.chunkCount ? ` (${doc.chunkCount})` : ''}`
+    : embeddingStatus === 'processing' || embeddingStatus === 'pending'
+      ? 'Indexing for AI search...'
+      : embeddingStatus === 'failed'
+        ? 'Vector index failed'
+        : '';
 
   return (
     <div className="sf-card" style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 14, position: 'relative', background: 'var(--bg-card)' }}>
@@ -49,6 +57,16 @@ const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, isAn
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
           {formatSize(doc.fileSize)}{doc.fileSize ? ' · ' : ''}{formatDate(doc.uploadedAt)}
         </div>
+        {vectorLabel && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 5,
+            fontSize: 11,
+            color: embeddingStatus === 'failed' ? '#FF6B6B' : embeddingStatus === 'ready' ? '#00B488' : '#6B7280',
+          }}>
+            {(embeddingStatus === 'processing' || embeddingStatus === 'pending') && <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} />}
+            {vectorLabel}
+          </div>
+        )}
       </div>
 
       {/* Status pill — clickable if AI results exist */}
@@ -130,12 +148,22 @@ const DocCard = ({ doc, onAnalyze, onDelete, onView, onViewSummary, onMove, isAn
               >
                 <BookOpen size={14} /> View Document
               </button>
-              <button
-                onClick={() => { setShowMenu(false); onMove(doc); }}
-                style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-              >
-                <FolderInput size={14} /> Move to...
-              </button>
+              {onMove && (
+                <button
+                  onClick={() => { setShowMenu(false); onMove(doc); }}
+                  style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                >
+                  <FolderInput size={14} /> Move to...
+                </button>
+              )}
+              {embeddingStatus === 'failed' && onRetryIndex && (
+                <button
+                  onClick={() => { setShowMenu(false); onRetryIndex(doc); }}
+                  style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#6C5CE7', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                >
+                  <RefreshCw size={14} /> Retry AI search index
+                </button>
+              )}
               <div style={{ height: 1, background: '#F0F0F2', margin: '2px 0' }} />
               <button
                 onClick={() => { setShowMenu(false); onDelete(doc); }}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Settings, Download, Trash2,
-  ArrowLeft, BarChart3, Clock, Table2, Activity
+  ArrowLeft, BarChart3, Clock, Table2, Activity, RefreshCw
 } from 'lucide-react';
 import DailyPlanTable from '../components/DailyPlanTable';
 import ProgressTracker from '../components/ProgressTracker';
@@ -52,14 +52,20 @@ const DashboardPage = ({ planData, setPlanData }) => {
     }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (window.confirm('Are you sure? This will delete your study plan and all progress from your account.')) {
       // setPlanData(null) triggers a cloud save with null — which is handled
       // gracefully by the backend (it simply doesn't save null).
       // We call it with null to clear React state, then navigate away.
-      setPlanData(null);
+      await setPlanData(null);
       navigate('/setup');
     }
+  };
+
+  const handleSmartReschedule = () => {
+    if (!planData) return;
+    const recalculated = recalculatePlan({ ...planData, plan: planData.plan.map(day => ({ ...day })) });
+    setPlanData(recalculated);
   };
 
   if (!planData || !planData.plan) {
@@ -110,6 +116,13 @@ const DashboardPage = ({ planData, setPlanData }) => {
               <Settings className="w-3.5 h-3.5" />
               New Plan
             </Link>
+            <button
+              onClick={handleSmartReschedule}
+              className="px-3 py-2 rounded-xl text-xs font-medium text-primary-600 bg-primary-50 border border-primary-200 hover:bg-primary-100 transition-all flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Smart Reschedule
+            </button>
             <button
               onClick={handleReset}
               className="px-3 py-2 rounded-xl text-xs font-medium text-red-500 bg-red-50 border border-red-200 hover:bg-red-100 transition-all flex items-center gap-1.5"

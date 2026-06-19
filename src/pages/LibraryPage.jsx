@@ -44,6 +44,9 @@ const LibraryPage = () => {
         const existing = prev.filter(c => c.subjectId !== subjectId);
         return [...existing, ...newChapters];
       });
+      setSubjects(prev => prev.map(s =>
+        s.subjectId === subjectId ? { ...s, chapterCount: newChapters.length } : s
+      ));
       setLoadedSubjectIds(prev => new Set([...prev, subjectId]));
     } catch {}
   }, [loadedSubjectIds]);
@@ -77,6 +80,7 @@ const LibraryPage = () => {
       name,
       color: result.color,
       order: subjects.length,
+      chapterCount: 0,
     };
     setSubjects(prev => [...prev, newSubject]);
     handleSelectSubject(result.subjectId);
@@ -98,6 +102,11 @@ const LibraryPage = () => {
       docCount: 0,
     };
     setChapters(prev => [...prev, newChapter]);
+    setSubjects(prev => prev.map(s =>
+      s.subjectId === selectedSubjectId
+        ? { ...s, chapterCount: (s.chapterCount || 0) + 1 }
+        : s
+    ));
     setSelectedChapterId(result.chapterId);
   }, [selectedSubjectId, chapters]);
 
@@ -125,6 +134,11 @@ const LibraryPage = () => {
     if (!window.confirm('Delete this chapter and all its documents?')) return;
     await deleteChapter(subjectId, chapterId);
     setChapters(prev => prev.filter(c => c.chapterId !== chapterId));
+    setSubjects(prev => prev.map(s =>
+      s.subjectId === subjectId
+        ? { ...s, chapterCount: Math.max(0, (s.chapterCount || 0) - 1) }
+        : s
+    ));
     if (selectedChapterId === chapterId) setSelectedChapterId(null);
   }, [selectedChapterId]);
 
@@ -163,7 +177,7 @@ const LibraryPage = () => {
           onDocCountChange={handleChapterDocCountChange}
         />
       ) : (
-        <SubjectContent subject={selectedSubject} />
+        <SubjectContent subject={selectedSubject} onDocCountChange={handleChapterDocCountChange} />
       )}
     </div>
 

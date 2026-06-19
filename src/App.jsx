@@ -12,8 +12,9 @@ import SettingsPage from './pages/SettingsPage';
 import HelpPage from './pages/HelpPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import { loadData, clearData } from './utils/storage';
-import { initApi, savePlanner, loadPlanner, migrateToCloud } from './utils/api';
+import { initApi, savePlanner, loadPlanner, migrateToCloud, deletePlanner } from './utils/api';
 
 function AppInner() {
   const { isAuthenticated, isLoading, getToken } = useAuth();
@@ -69,6 +70,9 @@ function AppInner() {
     setPlanDataState(newPlanData);
     if (!newPlanData) {
       localStorage.removeItem('sf_plan_backup');
+      try { await deletePlanner(); } catch (err) {
+        console.error('Cloud delete failed:', err);
+      }
       return;
     }
     // Always save to localStorage as backup first (instant)
@@ -106,6 +110,7 @@ function AppInner() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/*" element={
           <ProtectedRoute>
             <div className="min-h-screen bg-surface-50 text-surface-900 flex">

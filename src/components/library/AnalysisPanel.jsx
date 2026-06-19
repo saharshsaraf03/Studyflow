@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, X, Target, FileText, MessageCircle, Loader2, Send } from 'lucide-react';
+import { Sparkles, X, Target, FileText, MessageCircle, Loader2, Send, HelpCircle, RefreshCw } from 'lucide-react';
 import StudyPlanView from '../StudyPlanView';
 import ExamSummaryView from '../ExamSummaryView';
-import { callRAG, saveChat, loadChat } from '../../utils/api';
+import { callRAG, documentChat, saveChat, loadChat, generateQuiz } from '../../utils/api';
 
 /**
  * AnalysisPanel — slides in from right
@@ -15,12 +15,15 @@ const SUGGESTED = [
   'Give me practice questions',
 ];
 
-const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
+const AnalysisPanel = ({ doc, aiResults, extractedText, sourceType, sourceId, onClose }) => {
   const [activeTab, setActiveTab] = useState('plan');
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatLoaded, setChatLoaded] = useState(false);
+  const [quiz, setQuiz] = useState(null);
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [revealedAnswers, setRevealedAnswers] = useState({});
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -43,11 +46,23 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
     setChatMessages(updated);
     setChatLoading(true);
     try {
-      const json = await callRAG({
-        extractedText: extractedText.slice(0, 12000),
-        action: 'chat',
-        question: message,
-      });
+      const history = chatMessages.slice(-6).map(m => ({
+        role: m.role === 'ai' ? 'assistant' : m.role,
+        content: m.content,
+      }));
+      const json = (doc?.docId && sourceType && sourceId)
+        ? await documentChat({
+            docId: doc.docId,
+            sourceType,
+            sourceId,
+            question: message,
+            history,
+          })
+        : await callRAG({
+            extractedText: extractedText.slice(0, 12000),
+            action: 'chat',
+            question: message,
+          });
       const answer = json.answer || 'No response received.';
       const final = [...updated, { role: 'ai', content: answer }];
       setChatMessages(final);
@@ -57,14 +72,32 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
     } finally {
       setChatLoading(false);
     }
-  }, [chatInput, chatLoading, chatMessages, extractedText, doc]);
+  }, [chatInput, chatLoading, chatMessages, extractedText, doc, sourceType, sourceId]);
 
   const studyPlan = aiResults?.studyPlan || null;
   const examSummary = aiResults?.examSummary || null;
+  const handleGenerateQuiz = useCallback(async () => {
+    if (!extractedText || quizLoading) return;
+    setQuizLoading(true);
+    setRevealedAnswers({});
+    try {
+      const result = await generateQuiz({
+        extractedText: extractedText.slice(0, 20000),
+        fileName: doc?.fileName || 'document',
+        count: 8,
+      });
+      setQuiz(result.quiz || { questions: [] });
+    } catch (err) {
+      setQuiz({ questions: [], error: err.message || 'Quiz generation failed.' });
+    } finally {
+      setQuizLoading(false);
+    }
+  }, [doc?.fileName, extractedText, quizLoading]);
 
   const TABS = [
     { id: 'plan', label: 'Study Plan', icon: Target },
     { id: 'summary', label: 'Exam Summary', icon: FileText },
+    { id: 'quiz', label: 'Quiz', icon: HelpCircle },
     { id: 'chat', label: 'Chat', icon: MessageCircle },
   ];
 
@@ -127,6 +160,59 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
       <div style={{ flex: 1, overflowY: 'auto', padding: activeTab === 'chat' ? 0 : 16, display: 'flex', flexDirection: 'column' }}>
         {activeTab === 'plan' && <StudyPlanView studyPlan={studyPlan} />}
         {activeTab === 'summary' && <ExamSummaryView examSummary={examSummary} />}
+        {activeTab === 'quiz' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1A1D2E', margin: 0 }}>Quiz Mode</h3>
+                <p style={{ fontSize: 12, color: '#9CA3AF', margin: '3px 0 0' }}>Practice questions generated from this document.</p>
+              </div>
+              <button
+                onClick={handleGenerateQuiz}
+                disabled={!extractedText || quizLoading}
+                className="btn-primary"
+                style={{ height: 34, padding: '0 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: (!extractedText || quizLoading) ? 0.5 : 1 }}
+              >
+                {quizLoading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={13} />}
+                {quiz ? 'Regenerate' : 'Generate'}
+              </button>
+            </div>
+
+            {quizLoading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6C5CE7', fontSize: 13, padding: 12 }}>
+                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Building quiz...
+              </div>
+            )}
+            {quiz?.error && <p style={{ color: '#FF6B6B', fontSize: 13 }}>{quiz.error}</p>}
+            {!quiz && !quizLoading && (
+              <div style={{ padding: 18, borderRadius: 12, border: '1px dashed #E5E7EB', color: '#9CA3AF', fontSize: 13 }}>
+                Generate a quiz when you are ready to test recall.
+              </div>
+            )}
+            {(quiz?.questions || []).map((q, index) => (
+              <div key={index} className="sf-card" style={{ padding: 14 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{ width: 24, height: 24, borderRadius: 7, background: 'rgba(108,92,231,0.10)', color: '#6C5CE7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{index + 1}</span>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: 0, fontSize: 13, color: '#1A1D2E', fontWeight: 600, lineHeight: 1.5 }}>{q.question}</p>
+                    <button
+                      onClick={() => setRevealedAnswers(prev => ({ ...prev, [index]: !prev[index] }))}
+                      style={{ marginTop: 10, border: '1px solid #E5E7EB', background: '#fff', borderRadius: 8, padding: '6px 10px', fontSize: 12, color: '#6C5CE7', cursor: 'pointer' }}
+                    >
+                      {revealedAnswers[index] ? 'Hide Answer' : 'Reveal Answer'}
+                    </button>
+                    {revealedAnswers[index] && (
+                      <div style={{ marginTop: 10, padding: 10, borderRadius: 10, background: '#F9F9FB', fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
+                        <strong>Answer:</strong> {q.answer}
+                        {q.explanation && <><br /><strong>Why:</strong> {q.explanation}</>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {activeTab === 'chat' && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -165,7 +251,7 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, onClose }) => {
                       </span>
                       <div style={{
                         maxWidth: '85%', padding: '8px 12px', fontSize: 13, lineHeight: 1.55,
-                        whiteSpace: 'pre-wrap', borderRadius: 12,
+                        whiteSpace: 'pre-wrap',
                         background: msg.role === 'user' ? 'rgba(108,92,231,0.12)' : msg.role === 'error' ? 'rgba(255,107,107,0.08)' : 'var(--bg-primary)',
                         border: `1px solid ${msg.role === 'user' ? 'rgba(108,92,231,0.3)' : msg.role === 'error' ? 'rgba(255,107,107,0.2)' : 'var(--border-light)'}`,
                         color: msg.role === 'error' ? '#FF6B6B' : 'var(--text-primary)',

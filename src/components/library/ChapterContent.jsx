@@ -6,7 +6,8 @@ import DocCard from './DocCard';
 import NotesEditor from './NotesEditor';
 import UploadModal from './UploadModal';
 import AnalysisPanel from './AnalysisPanel';
-import { listCDocs, saveCDoc, deleteCDoc, analyzeCDoc, loadCNote, getCDoc, uploadPdfToS3 } from '../../utils/api';
+import DocumentViewer from '../DocumentViewer';
+import { listCDocs, saveCDoc, deleteCDoc, analyzeCDoc, loadCNote, getCDoc, uploadPdfToS3, retryVectorIndex } from '../../utils/api';
 
 /**
  * ChapterContent — right content area matching Claude Design
@@ -24,7 +25,9 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
   const [analyzingDocId, setAnalyzingDocId] = useState(null);
   const [analysisPanelDoc, setAnalysisPanelDoc] = useState(null);
   const [analysisPanelResults, setAnalysisPanelResults] = useState(null);
-  const [viewerDoc, setViewerDoc] = useState(null); // kept for compatibility
+  const [viewerDoc, setViewerDoc] = useState(null);
+  const [viewerFile, setViewerFile] = useState(null);
+  const [viewerPdfUrl, setViewerPdfUrl] = useState(null);
   const fileCache = React.useRef({}); // docId -> File blob cache
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [moveDoc_, setMoveDoc] = useState(null); // doc being moved
@@ -76,6 +79,9 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
       uploadedAt: new Date().toISOString(),
       hasAiResults: false,
       pdfUrl,
+      embeddingStatus: result.embeddingStatus,
+      chunkCount: result.chunkCount,
+      embeddingError: result.embeddingError,
     }]);
     if (onDocCountChange) onDocCountChange(chapter.chapterId, 1);
     setShowUpload(false);
@@ -85,8 +91,10 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
     setAnalyzingDocId(doc.docId);
     try {
       const result = await analyzeCDoc({ docId: doc.docId, chapterId: chapter.chapterId });
+      const full = await getCDoc(chapter.chapterId, doc.docId).catch(() => null);
+      const fullDoc = full?.doc || doc;
       setDocs(prev => prev.map(d => d.docId === doc.docId ? { ...d, hasAiResults: true } : d));
-      setAnalysisPanelDoc({ ...doc, hasAiResults: true });
+      setAnalysisPanelDoc({ ...fullDoc, hasAiResults: true });
       setAnalysisPanelResults(result.aiResults);
     } catch (err) {
       alert(`Analysis failed: ${err.message}`);
@@ -111,16 +119,28 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
   }, [chapter, analysisPanelDoc]);
 
   const handleViewDoc = useCallback(async (doc) => {
+    const isPdf = doc.fileName?.toLowerCase().endsWith('.pdf');
     // If we have a cached file blob from this session, create object URL and open
     const cachedFile = fileCache.current[doc.docId];
     if (cachedFile) {
-      const url = URL.createObjectURL(cachedFile);
-      window.open(url, '_blank');
+      if (!isPdf) {
+        window.open(URL.createObjectURL(cachedFile), '_blank', 'noopener,noreferrer');
+        return;
+      }
+      setViewerDoc(doc);
+      setViewerFile(cachedFile);
+      setViewerPdfUrl(null);
       return;
     }
     // Use pdfUrl from S3 — open directly in new tab
     if (doc.pdfUrl) {
-      window.open(doc.pdfUrl, '_blank');
+      if (!isPdf) {
+        window.open(doc.pdfUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      setViewerDoc(doc);
+      setViewerFile(null);
+      setViewerPdfUrl(doc.pdfUrl);
       return;
     }
     // Fall back to full fetch
@@ -128,7 +148,13 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
       const result = await getCDoc(chapter.chapterId, doc.docId);
       const fullDoc = result.doc || doc;
       if (fullDoc.pdfUrl) {
-        window.open(fullDoc.pdfUrl, '_blank');
+        if (!fullDoc.fileName?.toLowerCase().endsWith('.pdf')) {
+          window.open(fullDoc.pdfUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        setViewerDoc(fullDoc);
+        setViewerFile(null);
+        setViewerPdfUrl(fullDoc.pdfUrl);
       } else {
         alert('No PDF available for this document. Please re-upload it.');
       }
@@ -149,12 +175,29 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
     }
   }, [chapter]);
 
+  const handleRetryIndex = useCallback(async (doc) => {
+    setDocs(prev => prev.map(d => d.docId === doc.docId ? { ...d, embeddingStatus: 'processing', embeddingError: '' } : d));
+    try {
+      const result = await retryVectorIndex({ docId: doc.docId, sourceType: 'chapter', sourceId: chapter.chapterId });
+      setDocs(prev => prev.map(d => d.docId === doc.docId ? { ...d, ...result } : d));
+    } catch (err) {
+      setDocs(prev => prev.map(d => d.docId === doc.docId ? { ...d, embeddingStatus: 'failed', embeddingError: err.message } : d));
+      alert(`Index retry failed: ${err.message}`);
+    }
+  }, [chapter]);
+
 
 
   const handleMove = (doc) => setMoveDoc(doc);
 
-  const handleMoved = (docId) => {
+  const handleMoved = (docId, result, moveRequest) => {
     setDocs(prev => prev.filter(d => d.docId !== docId));
+    if (onDocCountChange) {
+      onDocCountChange(chapter.chapterId, -1);
+      if (moveRequest?.destType === 'chapter') {
+        onDocCountChange(moveRequest.destId, 1);
+      }
+    }
     setMoveDoc(null);
   };
 
@@ -210,7 +253,7 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
               className="btn-primary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 14px', fontSize: 13 }}
             >
-              <Upload size={14} /> Upload PDF
+              <Upload size={14} /> Upload
             </button>
             {unanalyzedCount > 0 && (
               <button
@@ -250,7 +293,7 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
             }}>
               <Upload size={24} style={{ color: '#D1D5DB', margin: '0 auto 8px' }} />
               <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
-                No documents yet. Upload a PDF to get started.
+                No documents yet. Upload a study document to get started.
               </p>
             </div>
           ) : (
@@ -265,6 +308,7 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
                   onView={handleViewDoc}
                   onViewSummary={handleViewSummary}
                   onMove={handleMove}
+                  onRetryIndex={handleRetryIndex}
                 />
               ))}
             </div>
@@ -342,6 +386,8 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
           doc={analysisPanelDoc}
           aiResults={analysisPanelResults}
           extractedText={analysisPanelDoc.extractedText || ''}
+          sourceType="chapter"
+          sourceId={chapter.chapterId}
           onClose={() => { setAnalysisPanelDoc(null); setAnalysisPanelResults(null); }}
         />
       )}

@@ -52,15 +52,16 @@ const MoveModal = ({ doc, sourceType, sourceId, onMoved, onClose }) => {
     setIsMoving(true);
     setError('');
     try {
-      await moveDoc({
+      const moveRequest = {
         docId: doc.docId,
         sourceType,
         sourceId,
         destType: selectedDestType,
         destId: selectedDestId,
         destSubjectId: selectedSubjectId,
-      });
-      onMoved(doc.docId);
+      };
+      const result = await moveDoc(moveRequest);
+      onMoved(doc.docId, result, moveRequest);
     } catch (err) {
       setError(err.message || 'Move failed. Please try again.');
       setIsMoving(false);

@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
+import { migrateVectors } from '../utils/api';
 
 /* ── Reusable primitives matching Claude Design ── */
 
@@ -116,6 +117,8 @@ const SettingsPage = () => {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [indexingLibrary, setIndexingLibrary] = useState(false);
+  const [indexingMsg, setIndexingMsg] = useState('');
 
   // Preferences state
   const [emailNotifs, setEmailNotifs] = useState(true);
@@ -280,6 +283,24 @@ const SettingsPage = () => {
     );
     if (confirmed) {
       alert('Account deletion is not yet implemented. Please contact support.');
+    }
+  };
+
+  const handleIndexLibrary = async () => {
+    setIndexingLibrary(true);
+    setIndexingMsg('');
+    try {
+      const result = await migrateVectors({ limit: 10 });
+      if (!result.success) {
+        setIndexingMsg(result.reason || 'Indexing is not available yet.');
+      } else {
+        const failedCount = result.failed?.length || 0;
+        setIndexingMsg(`Processed ${result.processed?.length || 0} document${(result.processed?.length || 0) === 1 ? '' : 's'}${failedCount ? `, ${failedCount} failed` : ''}.`);
+      }
+    } catch (err) {
+      setIndexingMsg(err.message || 'Indexing failed.');
+    } finally {
+      setIndexingLibrary(false);
     }
   };
 
@@ -588,6 +609,29 @@ const SettingsPage = () => {
                   {exporting
                     ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />Exporting...</>
                     : <><Download size={13} />Export PDF</>
+                  }
+                </button>
+              }
+            />
+            <SettingRow
+              label="Index document library"
+              sub={indexingMsg || "Backfill vector search for existing uploaded documents"}
+              control={
+                <button
+                  onClick={handleIndexLibrary}
+                  disabled={indexingLibrary}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    height: 34, padding: '0 14px', borderRadius: 8,
+                    border: '1px solid var(--border-light)', background: 'var(--bg-card)',
+                    color: 'var(--text-primary)', fontSize: 12, fontWeight: 500,
+                    cursor: indexingLibrary ? 'not-allowed' : 'pointer',
+                    opacity: indexingLibrary ? 0.6 : 1,
+                  }}
+                >
+                  {indexingLibrary
+                    ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />Indexing...</>
+                    : <><Database size={13} />Index batch</>
                   }
                 </button>
               }

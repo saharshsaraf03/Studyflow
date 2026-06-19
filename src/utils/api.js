@@ -42,6 +42,10 @@ export async function loadPlanner() {
   return apiFetch('/api/planner/load');
 }
 
+export async function deletePlanner() {
+  return apiFetch('/api/planner', { method: 'DELETE' });
+}
+
 // ── Documents ─────────────────────────────────────────────────────────────────
 
 export async function saveDocument({ docId, fileName, extractedText, aiResults }) {
@@ -97,16 +101,32 @@ async function waitForBackend(maxWaitMs = 60000) {
 
 export async function callRAG({ extractedText, action, question }) {
   await waitForBackend();
-  const response = await fetch(`${BASE_URL}/`, {
+  return apiFetch('/', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ extractedText, action, question }),
   });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `Server error (${response.status})`);
-  }
-  return response.json();
+}
+
+export async function documentChat({ docId, sourceType, sourceId, question, history }) {
+  await waitForBackend();
+  return apiFetch('/api/document-chat', {
+    method: 'POST',
+    body: JSON.stringify({ docId, sourceType, sourceId, question, history }),
+  });
+}
+
+export async function retryVectorIndex({ docId, sourceType, sourceId }) {
+  return apiFetch('/api/vectors/reindex', {
+    method: 'POST',
+    body: JSON.stringify({ docId, sourceType, sourceId }),
+  });
+}
+
+export async function migrateVectors({ limit = 10 } = {}) {
+  return apiFetch('/api/vectors/migrate', {
+    method: 'POST',
+    body: JSON.stringify({ limit }),
+  });
 }
 
 // ── Migration ─────────────────────────────────────────────────────────────────
@@ -176,10 +196,10 @@ export async function deleteChapter(subjectId, chapterId) {
 
 // ── Library: Chapter Documents ────────────────────────────────────────────────
 
-export async function saveCDoc({ docId, chapterId, fileName, fileSize, extractedText, aiResults }) {
+export async function saveCDoc({ docId, chapterId, fileName, fileSize, extractedText, aiResults, pdfUrl, s3Key }) {
   return apiFetch('/api/cdocs/save', {
     method: 'POST',
-    body: JSON.stringify({ docId, chapterId, fileName, fileSize, extractedText, aiResults }),
+    body: JSON.stringify({ docId, chapterId, fileName, fileSize, extractedText, aiResults, pdfUrl, s3Key }),
   });
 }
 
@@ -217,10 +237,10 @@ export async function loadCNote(chapterId) {
 
 // ── Subject-level Documents (SDOC) ────────────────────────────────────────────
 
-export async function saveSDoc({ docId, subjectId, fileName, fileSize, extractedText, aiResults }) {
+export async function saveSDoc({ docId, subjectId, fileName, fileSize, extractedText, aiResults, pdfUrl, s3Key }) {
   return apiFetch('/api/sdocs/save', {
     method: 'POST',
-    body: JSON.stringify({ docId, subjectId, fileName, fileSize, extractedText, aiResults }),
+    body: JSON.stringify({ docId, subjectId, fileName, fileSize, extractedText, aiResults, pdfUrl, s3Key }),
   });
 }
 
@@ -262,6 +282,13 @@ export async function generateNotes({ extractedText, fileName }) {
   return apiFetch('/api/generate-notes', {
     method: 'POST',
     body: JSON.stringify({ extractedText, fileName }),
+  });
+}
+
+export async function generateQuiz({ extractedText, fileName, count = 8 }) {
+  return apiFetch('/api/generate-quiz', {
+    method: 'POST',
+    body: JSON.stringify({ extractedText, fileName, count }),
   });
 }
 
@@ -311,6 +338,7 @@ export async function uploadPdfToS3({ file, docId }) {
       fileName: file.name,
       fileBase64: base64,
       docId,
+      contentType: file.type || 'application/octet-stream',
     }),
   });
 }

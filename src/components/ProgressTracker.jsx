@@ -38,13 +38,21 @@ const ProgressTracker = ({ planData, onUpdatePlan, subjectNames }) => {
     }
   }, [selectedDayIndex]);
 
-  // Get days that can be logged (today and past pending days)
+  // Get days that can be logged. Future days stay visible in the schedule
+  // table, but cannot be marked completed/missed or given actual hours.
   const loggableDays = plan
     .map((day, index) => ({ ...day, index }))
-    .filter(day => day.date <= today || day.status !== 'pending');
+    .filter(day => day.date <= today);
+
+  React.useEffect(() => {
+    if (selectedDay?.date > today && loggableDays.length > 0) {
+      setSelectedDayIndex(loggableDays[loggableDays.length - 1].index);
+    }
+  }, [selectedDay?.date, today, loggableDays.length]);
 
   // Save actual hours for the selected day
   const handleSave = (status = 'completed') => {
+    if (!selectedDay || selectedDay.date > today) return;
     const updatedPlan = { ...planData };
     updatedPlan.plan[selectedDayIndex] = {
       ...updatedPlan.plan[selectedDayIndex],
@@ -59,6 +67,7 @@ const ProgressTracker = ({ planData, onUpdatePlan, subjectNames }) => {
 
   // Mark day as missed (0 hours for all subjects)
   const handleMarkMissed = () => {
+    if (!selectedDay || selectedDay.date > today) return;
     const zeroHours = {};
     subjectNames.forEach(name => { zeroHours[name] = 0; });
     
@@ -76,6 +85,7 @@ const ProgressTracker = ({ planData, onUpdatePlan, subjectNames }) => {
 
   // Reset day to pending
   const handleReset = () => {
+    if (!selectedDay || selectedDay.date > today) return;
     const updatedPlan = { ...planData };
     updatedPlan.plan[selectedDayIndex] = {
       ...updatedPlan.plan[selectedDayIndex],
@@ -104,8 +114,8 @@ const ProgressTracker = ({ planData, onUpdatePlan, subjectNames }) => {
           onChange={(e) => setSelectedDayIndex(Number(e.target.value))}
           className="sf-select"
         >
-          {plan.map((day, index) => (
-            <option key={day.date} value={index}>
+          {loggableDays.map((day) => (
+            <option key={day.date} value={day.index}>
               {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
               {day.date === today ? ' (Today)' : ''}
               {day.status === 'completed' ? ' ✓' : day.status === 'missed' ? ' ✗' : ''}

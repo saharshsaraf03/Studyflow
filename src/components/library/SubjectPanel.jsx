@@ -115,7 +115,10 @@ const SubjectPanel = ({
 
       {/* Subject list */}
       <div style={{ padding: '0 8px', flexShrink: 0 }}>
-        {filteredSubjects.map(s => (
+        {filteredSubjects.map(s => {
+          const loadedChapterCount = chapters.filter(c => c.subjectId === s.subjectId).length;
+          const chapterCount = loadedChapterCount || s.chapterCount || 0;
+          return (
           <div
             key={s.subjectId}
             onClick={() => onSelectSubjectLevel(s.subjectId)}
@@ -141,7 +144,7 @@ const SubjectPanel = ({
                 {s.name}
               </div>
               <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 1 }}>
-                {chapters.filter(c => c.subjectId === s.subjectId).length} chapters
+                {chapterCount} chapters
               </div>
             </div>
             {hoveredSubject === s.subjectId && (
@@ -153,7 +156,7 @@ const SubjectPanel = ({
               </button>
             )}
           </div>
-        ))}
+        );})}
 
         {filteredSubjects.length === 0 && !addingSubject && (
           <div style={{ padding: '12px 14px', fontSize: 13, color: '#9CA3AF', textAlign: 'center' }}>

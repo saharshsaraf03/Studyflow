@@ -6,7 +6,8 @@ import DocCard from './DocCard';
 import NotesEditor from './NotesEditor';
 import UploadModal from './UploadModal';
 import AnalysisPanel from './AnalysisPanel';
-import { listSDocs, saveSDoc, deleteSDoc, analyzeSDoc, loadSNote, getSDoc, uploadPdfToS3 } from '../../utils/api';
+import DocumentViewer from '../DocumentViewer';
+import { listSDocs, saveSDoc, deleteSDoc, analyzeSDoc, loadSNote, getSDoc, uploadPdfToS3, retryVectorIndex } from '../../utils/api';
 
 /**
  * SubjectContent — right content area when a subject is selected
@@ -16,7 +17,7 @@ import { listSDocs, saveSDoc, deleteSDoc, analyzeSDoc, loadSNote, getSDoc, uploa
  * Documents here are not tied to any chapter.
  * User can upload freely and assign to chapters later.
  */
-const SubjectContent = ({ subject }) => {
+const SubjectContent = ({ subject, onDocCountChange }) => {
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [noteContent, setNoteContent] = useState('');
@@ -75,6 +76,9 @@ const SubjectContent = ({ subject }) => {
       uploadedAt: new Date().toISOString(),
       hasAiResults: false,
       pdfUrl,
+      embeddingStatus: result.embeddingStatus,
+      chunkCount: result.chunkCount,
+      embeddingError: result.embeddingError,
     }]);
     setShowUpload(false);
   }, [subject]);
@@ -83,8 +87,10 @@ const SubjectContent = ({ subject }) => {
     setAnalyzingDocId(doc.docId);
     try {
       const result = await analyzeSDoc({ subjectId: subject.subjectId, docId: doc.docId });
+      const full = await getSDoc(subject.subjectId, doc.docId).catch(() => null);
+      const fullDoc = full?.doc || doc;
       setDocs(prev => prev.map(d => d.docId === doc.docId ? { ...d, hasAiResults: true } : d));
-      setAnalysisPanelDoc({ ...doc, hasAiResults: true });
+      setAnalysisPanelDoc({ ...fullDoc, hasAiResults: true });
       setAnalysisPanelResults(result.aiResults);
     } catch (err) {
       alert(`Analysis failed: ${err.message}`);
@@ -110,10 +116,16 @@ const SubjectContent = ({ subject }) => {
   }, [subject, analysisPanelDoc]);
 
   const handleViewDoc = useCallback(async (doc) => {
+    const isPdf = doc.fileName?.toLowerCase().endsWith('.pdf');
     const cachedFile = fileCache.current[doc.docId];
     if (cachedFile) {
-      const url = URL.createObjectURL(cachedFile);
-      window.open(url, '_blank');
+      if (!isPdf) {
+        window.open(URL.createObjectURL(cachedFile), '_blank', 'noopener,noreferrer');
+        return;
+      }
+      setViewerDoc(doc);
+      setViewerFile(cachedFile);
+      setViewerPdfUrl(null);
       return;
     }
     try {
@@ -121,13 +133,25 @@ const SubjectContent = ({ subject }) => {
       const fullDoc = result.doc || doc;
       const pdfUrl = fullDoc.pdfUrl || doc.pdfUrl || '';
       if (pdfUrl && pdfUrl.startsWith('http')) {
-        window.open(pdfUrl, '_blank');
+        if (!fullDoc.fileName?.toLowerCase().endsWith('.pdf')) {
+          window.open(pdfUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        setViewerDoc(fullDoc);
+        setViewerFile(null);
+        setViewerPdfUrl(pdfUrl);
       } else {
         alert('No PDF available. Please re-upload this document.');
       }
     } catch {
       if (doc.pdfUrl && doc.pdfUrl.startsWith('http')) {
-        window.open(doc.pdfUrl, '_blank');
+        if (!isPdf) {
+          window.open(doc.pdfUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        setViewerDoc(doc);
+        setViewerFile(null);
+        setViewerPdfUrl(doc.pdfUrl);
       } else {
         alert('Failed to open document.');
       }
@@ -146,10 +170,24 @@ const SubjectContent = ({ subject }) => {
     }
   }, [subject]);
 
+  const handleRetryIndex = useCallback(async (doc) => {
+    setDocs(prev => prev.map(d => d.docId === doc.docId ? { ...d, embeddingStatus: 'processing', embeddingError: '' } : d));
+    try {
+      const result = await retryVectorIndex({ docId: doc.docId, sourceType: 'subject', sourceId: subject.subjectId });
+      setDocs(prev => prev.map(d => d.docId === doc.docId ? { ...d, ...result } : d));
+    } catch (err) {
+      setDocs(prev => prev.map(d => d.docId === doc.docId ? { ...d, embeddingStatus: 'failed', embeddingError: err.message } : d));
+      alert(`Index retry failed: ${err.message}`);
+    }
+  }, [subject]);
+
   const handleMove = (doc) => setMoveDoc(doc);
 
-  const handleMoved = (docId) => {
+  const handleMoved = (docId, result, moveRequest) => {
     setDocs(prev => prev.filter(d => d.docId !== docId));
+    if (moveRequest?.destType === 'chapter' && onDocCountChange) {
+      onDocCountChange(moveRequest.destId, 1);
+    }
     setMoveDoc(null);
   };
 
@@ -205,7 +243,7 @@ const SubjectContent = ({ subject }) => {
               className="btn-primary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 14px', fontSize: 13 }}
             >
-              <Upload size={14} /> Upload PDF
+              <Upload size={14} /> Upload
             </button>
             {unanalyzedCount > 0 && (
               <button
@@ -254,7 +292,7 @@ const SubjectContent = ({ subject }) => {
             }}>
               <Upload size={24} style={{ color: '#D1D5DB', margin: '0 auto 8px' }} />
               <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
-                No documents yet. Upload a PDF to store it under this subject.
+                No documents yet. Upload a study document under this subject.
               </p>
             </div>
           ) : (
@@ -268,6 +306,8 @@ const SubjectContent = ({ subject }) => {
                   onDelete={handleDelete}
                   onView={handleViewDoc}
                   onViewSummary={handleViewSummary}
+                  onMove={handleMove}
+                  onRetryIndex={handleRetryIndex}
                 />
               ))}
             </div>
@@ -347,6 +387,8 @@ const SubjectContent = ({ subject }) => {
           doc={analysisPanelDoc}
           aiResults={analysisPanelResults}
           extractedText={analysisPanelDoc.extractedText || ''}
+          sourceType="subject"
+          sourceId={subject.subjectId}
           onClose={() => { setAnalysisPanelDoc(null); setAnalysisPanelResults(null); }}
         />
       )}

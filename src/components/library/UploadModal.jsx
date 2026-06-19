@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Upload, FileText, X, Loader2, Check } from 'lucide-react';
+import { Upload, FileText, X, Loader2 } from 'lucide-react';
 
-const MAX_SIZE = 10 * 1024 * 1024;
+const MAX_SIZE = 20 * 1024 * 1024;
+const ACCEPTED_EXTENSIONS = ['pdf', 'txt', 'md', 'markdown', 'docx', 'png', 'jpg', 'jpeg', 'webp'];
 
 const extractTextFromPDF = async (file) => {
   const pdfjsLib = await import('pdfjs-dist');
@@ -20,10 +21,51 @@ const extractTextFromPDF = async (file) => {
   return text.trim().slice(0, 50000);
 };
 
-/**
- * UploadModal — PDF upload dialog
- * Extracts text client-side, calls onUpload with { file, extractedText }
- */
+const extractTextFromDocx = async (file) => {
+  const mammoth = await import('mammoth/mammoth.browser');
+  const arrayBuffer = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return (result.value || '').trim().slice(0, 50000);
+};
+
+const extractTextFromImage = async (file, setProgress) => {
+  const { createWorker } = await import('tesseract.js');
+  const worker = await createWorker('eng', 1, {
+    logger: (m) => {
+      if (m.status && typeof m.progress === 'number') {
+        setProgress(`OCR: ${m.status} ${Math.round(m.progress * 100)}%`);
+      }
+    },
+  });
+  try {
+    const { data } = await worker.recognize(file);
+    return (data.text || '').trim().slice(0, 50000);
+  } finally {
+    await worker.terminate();
+  }
+};
+
+const extractTextFromFile = async (file, setProgress) => {
+  const ext = file.name.split('.').pop()?.toLowerCase();
+  if (file.type === 'application/pdf' || ext === 'pdf') {
+    setProgress('Extracting text from PDF...');
+    return extractTextFromPDF(file);
+  }
+  if (file.type.startsWith('text/') || ['txt', 'md', 'markdown'].includes(ext)) {
+    setProgress('Reading text file...');
+    return (await file.text()).trim().slice(0, 50000);
+  }
+  if (ext === 'docx') {
+    setProgress('Extracting text from Word document...');
+    return extractTextFromDocx(file);
+  }
+  if (file.type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+    setProgress('Running OCR on image...');
+    return extractTextFromImage(file, setProgress);
+  }
+  throw new Error('Unsupported file type.');
+};
+
 const UploadModal = ({ chapterName, onUpload, onClose }) => {
   const [file, setFile] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -35,22 +77,30 @@ const UploadModal = ({ chapterName, onUpload, onClose }) => {
   const handleFile = useCallback((f) => {
     setError('');
     if (!f) return;
-    if (f.type !== 'application/pdf') { setError('Please upload a PDF file.'); return; }
-    if (f.size > MAX_SIZE) { setError('File exceeds 10 MB limit.'); return; }
+    const ext = f.name.split('.').pop()?.toLowerCase();
+    if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+      setError('Upload PDF, DOCX, TXT, Markdown, or image files.');
+      return;
+    }
+    if (f.size > MAX_SIZE) {
+      setError('File exceeds 20 MB limit.');
+      return;
+    }
     setFile(f);
   }, []);
 
   const handleDrop = (e) => {
-    e.preventDefault(); setIsDragOver(false);
+    e.preventDefault();
+    setIsDragOver(false);
     if (e.dataTransfer.files?.[0]) handleFile(e.dataTransfer.files[0]);
   };
 
   const handleUpload = async () => {
     if (!file) return;
     setIsProcessing(true);
-    setProgress('Extracting text from PDF...');
+    setProgress('Preparing file...');
     try {
-      const extractedText = await extractTextFromPDF(file);
+      const extractedText = await extractTextFromFile(file, setProgress);
       setProgress('Uploading to cloud storage...');
       await onUpload({ file, extractedText });
     } catch (err) {
@@ -68,10 +118,9 @@ const UploadModal = ({ chapterName, onUpload, onClose }) => {
       padding: 16,
     }}>
       <div className="sf-card" style={{ width: '100%', maxWidth: 480, padding: 24 }}>
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1A1D2E', margin: 0 }}>Upload PDF</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1A1D2E', margin: 0 }}>Upload Document</h3>
             {chapterName && <p style={{ fontSize: 12, color: '#9CA3AF', margin: '2px 0 0 0' }}>to {chapterName}</p>}
           </div>
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 7, background: '#F5F5F7', border: 'none', color: '#6B7280', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
@@ -92,13 +141,18 @@ const UploadModal = ({ chapterName, onUpload, onClose }) => {
               transition: 'all 0.2s',
             }}
           >
-            <input ref={fileInputRef} type="file" accept=".pdf" style={{ display: 'none' }}
-              onChange={e => handleFile(e.target.files?.[0])} />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp"
+              style={{ display: 'none' }}
+              onChange={e => handleFile(e.target.files?.[0])}
+            />
             <Upload size={32} style={{ color: isDragOver ? '#6C5CE7' : '#9CA3AF', margin: '0 auto 12px' }} />
             <p style={{ fontSize: 14, fontWeight: 500, color: '#374151', margin: '0 0 4px' }}>
-              Drag & drop your PDF here
+              Drag & drop your file here
             </p>
-            <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>or click to browse · Max 10 MB</p>
+            <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>PDF, DOCX, TXT, Markdown, image OCR · Max 20 MB</p>
           </div>
         ) : (
           <div style={{
@@ -147,7 +201,7 @@ const UploadModal = ({ chapterName, onUpload, onClose }) => {
           <button onClick={handleUpload} disabled={!file || isProcessing}
             className="btn-primary"
             style={{ flex: 1, height: 40, borderRadius: 10, fontSize: 14, fontWeight: 600, opacity: (!file || isProcessing) ? 0.5 : 1, cursor: (!file || isProcessing) ? 'not-allowed' : 'pointer' }}>
-            {isProcessing ? 'Uploading...' : 'Upload PDF'}
+            {isProcessing ? 'Uploading...' : 'Upload'}
           </button>
         </div>
       </div>

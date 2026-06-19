@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Upload, Loader2, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Upload, Loader2, FileText, Highlighter } from 'lucide-react';
 
 /**
  * DocumentViewer — renders a PDF file visually using pdf.js canvas rendering
@@ -18,7 +18,11 @@ const DocumentViewer = ({ file, pdfUrl, fileName, onRequestFile }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [needsFile, setNeedsFile] = useState(!file && !pdfUrl);
+  const [textItems, setTextItems] = useState([]);
+  const [selectedText, setSelectedText] = useState('');
+  const [highlights, setHighlights] = useState([]);
   const canvasRef = useRef(null);
+  const textLayerRef = useRef(null);
   const renderTaskRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -79,6 +83,23 @@ const DocumentViewer = ({ file, pdfUrl, fileName, onRequestFile }) => {
       const renderContext = { canvasContext: ctx, viewport };
       renderTaskRef.current = page.render(renderContext);
 
+      const content = await page.getTextContent();
+      const pdfjsLib = await import('pdfjs-dist');
+      const viewportTransform = viewport.transform;
+      const nextTextItems = content.items.map((item, index) => {
+        const tx = pdfjsLib.Util.transform(viewportTransform, item.transform);
+        const fontHeight = Math.hypot(tx[2], tx[3]);
+        return {
+          id: `${currentPage}-${index}`,
+          text: item.str,
+          left: tx[4],
+          top: tx[5] - fontHeight,
+          width: item.width * scale,
+          height: fontHeight,
+        };
+      }).filter(item => item.text?.trim());
+      setTextItems(nextTextItems);
+
       try {
         await renderTaskRef.current.promise;
       } catch (err) {
@@ -100,6 +121,23 @@ const DocumentViewer = ({ file, pdfUrl, fileName, onRequestFile }) => {
   const goToNext = () => setCurrentPage(p => Math.min(totalPages, p + 1));
   const zoomIn = () => setScale(s => Math.min(3, s + 0.2));
   const zoomOut = () => setScale(s => Math.max(0.5, s - 0.2));
+  const normalizedSelection = selectedText.trim().replace(/\s+/g, ' ');
+  const addHighlight = () => {
+    if (!normalizedSelection || normalizedSelection.length < 3) return;
+    setHighlights(prev => prev.includes(normalizedSelection) ? prev : [...prev, normalizedSelection]);
+    setSelectedText('');
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleTextMouseUp = () => {
+    const text = window.getSelection()?.toString().trim() || '';
+    setSelectedText(text.length >= 3 ? text : '');
+  };
+
+  const isHighlighted = (text) => {
+    const normalized = text.trim().replace(/\s+/g, ' ');
+    return highlights.some(h => h.includes(normalized) || normalized.includes(h));
+  };
 
   if (needsFile) {
     return (
@@ -182,6 +220,13 @@ const DocumentViewer = ({ file, pdfUrl, fileName, onRequestFile }) => {
 
         <div style={{ flex: 1 }} />
 
+        {normalizedSelection && (
+          <button onClick={addHighlight}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, borderRadius: 6, border: 'none', background: '#FFECA8', color: '#5B4A00', fontSize: 11, fontWeight: 600, padding: '0 10px', cursor: 'pointer' }}>
+            <Highlighter size={13} /> Highlight
+          </button>
+        )}
+
         {/* Re-select file */}
         <input ref={fileInputRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleFileSelect} />
         <button onClick={() => fileInputRef.current?.click()}
@@ -213,15 +258,47 @@ const DocumentViewer = ({ file, pdfUrl, fileName, onRequestFile }) => {
             </button>
           </div>
         ) : (
-          <canvas
-            ref={canvasRef}
-            style={{
-              boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
-              maxWidth: '100%',
-              display: 'block',
-              height: 'auto',
-            }}
-          />
+          <div style={{ position: 'relative', boxShadow: '0 4px 24px rgba(0,0,0,0.4)' }}>
+            <canvas
+              ref={canvasRef}
+              style={{
+                maxWidth: '100%',
+                display: 'block',
+                height: 'auto',
+              }}
+            />
+            <div
+              ref={textLayerRef}
+              onMouseUp={handleTextMouseUp}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                overflow: 'hidden',
+                lineHeight: 1,
+                userSelect: 'text',
+              }}
+            >
+              {textItems.map(item => (
+                <span
+                  key={item.id}
+                  style={{
+                    position: 'absolute',
+                    left: item.left,
+                    top: item.top,
+                    width: item.width || 'auto',
+                    height: item.height,
+                    fontSize: item.height,
+                    color: 'transparent',
+                    background: isHighlighted(item.text) ? 'rgba(255, 236, 168, 0.65)' : 'transparent',
+                    whiteSpace: 'pre',
+                    cursor: 'text',
+                  }}
+                >
+                  {item.text}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>
