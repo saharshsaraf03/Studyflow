@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useImperativeHandle, f
 import { useTheme } from '../../contexts/ThemeContext';
 import { Bold, Italic, Underline, Link, Code, List, ListOrdered } from 'lucide-react';
 import { saveCNote } from '../../utils/api';
+import { sanitizeNotesHtml } from '../../utils/sanitize';
 
 /**
  * NotesEditor — rich text editor matching Claude Design toolbar exactly
@@ -19,8 +20,9 @@ const NotesEditor = forwardRef(({ chapterId, initialContent = '', saveOverride =
     insertHtml: (html, mode) => {
       if (!editorRef.current) return;
       editorRef.current.focus();
+      const safeHtml = sanitizeNotesHtml(html);
       if (mode === 'replace') {
-        editorRef.current.innerHTML = html;
+        editorRef.current.innerHTML = safeHtml;
       } else {
         // Append: move cursor to end then insert
         const el = editorRef.current;
@@ -29,7 +31,7 @@ const NotesEditor = forwardRef(({ chapterId, initialContent = '', saveOverride =
         range.collapse(false);
         const sel = window.getSelection();
         if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-        document.execCommand('insertHTML', false, '<br><br>' + html);
+        document.execCommand('insertHTML', false, '<br><br>' + safeHtml);
       }
       // Trigger save
       handleInput();
@@ -64,7 +66,7 @@ const NotesEditor = forwardRef(({ chapterId, initialContent = '', saveOverride =
   // Load initial content
   useEffect(() => {
     if (editorRef.current && initialContent) {
-      editorRef.current.innerHTML = initialContent;
+      editorRef.current.innerHTML = sanitizeNotesHtml(initialContent);
     }
   }, [chapterId]);
 

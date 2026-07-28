@@ -223,6 +223,32 @@ export function createOAuthSession(idToken) {
   };
 }
 
+/**
+ * Refresh OAuth tokens using the stored refresh token.
+ * Cognito does NOT return a new refresh_token on refresh, so callers should
+ * reuse the existing one. Returns the raw token response
+ * ({ id_token, access_token, expires_in, token_type }).
+ */
+export async function refreshOAuthToken(refreshToken) {
+  if (!refreshToken) throw new Error('Missing refresh token');
+  const response = await fetch(`${COGNITO_DOMAIN}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: OAUTH_CLIENT_ID,
+      refresh_token: refreshToken,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error_description || 'OAuth token refresh failed');
+  }
+
+  return response.json();
+}
+
 // ── Change Password ───────────────────────────────────────────────────────────
 
 export async function changePassword(oldPassword, newPassword) {

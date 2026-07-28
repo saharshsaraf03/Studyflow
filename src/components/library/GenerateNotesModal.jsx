@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, X, Loader2, RefreshCw, Replace, PlusSquare } from 'lucide-react';
 import { generateNotes, getCDoc, getSDoc } from '../../utils/api';
+import { sanitizeNotesHtml } from '../../utils/sanitize';
 
 /**
  * GenerateNotesModal — Option C preview flow
@@ -48,10 +49,10 @@ const GenerateNotesModal = ({ docs, chapterId, subjectId, onInsert, onClose }) =
         throw new Error('This document has no extractable text. Try re-uploading the PDF.');
       }
       const result = await generateNotes({
-        extractedText: extractedText.slice(0, 15000),
+        extractedText: extractedText.slice(0, 50000),
         fileName: doc?.fileName || 'document',
       });
-      setGeneratedHtml(result.html);
+      setGeneratedHtml(sanitizeNotesHtml(result.html));
       setStep('preview');
     } catch (err) {
       setError(err.message || 'Generation failed. Please try again.');
@@ -65,10 +66,10 @@ const GenerateNotesModal = ({ docs, chapterId, subjectId, onInsert, onClose }) =
       const doc = docs.find(d => d.docId === selectedDocId || d.docId === docs[0].docId);
       const extractedText = await fetchExtractedText(doc.docId);
       const result = await generateNotes({
-        extractedText: extractedText.slice(0, 15000),
+        extractedText: extractedText.slice(0, 50000),
         fileName: doc?.fileName || 'document',
       });
-      setGeneratedHtml(result.html);
+      setGeneratedHtml(sanitizeNotesHtml(result.html));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -196,7 +197,7 @@ const GenerateNotesModal = ({ docs, chapterId, subjectId, onInsert, onClose }) =
                 flex: 1, overflowY: 'auto', padding: '16px 24px',
                 fontSize: 13, lineHeight: 1.65, color: '#374151',
               }}
-              dangerouslySetInnerHTML={{ __html: generatedHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizeNotesHtml(generatedHtml) }}
             />
 
             {/* Action buttons */}

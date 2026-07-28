@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   getCurrentSession, getUserAttributes,
   signOut as cognitoSignOut,
-  handleOAuthCallback, createOAuthSession,
+  handleOAuthCallback, createOAuthSession, refreshOAuthToken,
 } from '../utils/auth';
 
 const AuthContext = createContext(null);
@@ -34,6 +34,7 @@ export function AuthProvider({ children }) {
           sub: result.user.sub,
           _oauthTokens: result.tokens,
           _idToken: result.user.idToken,
+          _refreshToken: result.tokens.refresh_token,
         };
         // Persist OAuth session
         localStorage.setItem('sf_oauth_user', JSON.stringify({
@@ -97,6 +98,7 @@ export function AuthProvider({ children }) {
       name: oauthResult.user.name,
       sub: oauthResult.user.sub,
       _idToken: oauthResult.user.idToken,
+      _refreshToken: oauthResult.tokens?.refresh_token,
       _expiresAt: Date.now() + (oauthResult.tokens.expires_in * 1000),
     };
     // Persist OAuth session
@@ -113,9 +115,31 @@ export function AuthProvider({ children }) {
   }
 
   async function getToken() {
-    // OAuth user — return stored id token
-    if (user?._idToken) return user._idToken;
-    if (user?._oauthTokens?.id_token) return user._oauthTokens.id_token;
+    // OAuth user — refresh the id token if it is expired or about to expire
+    if (user?._idToken || user?._refreshToken) {
+      const expiresAt = user._expiresAt || 0;
+      const needsRefresh = !user._idToken || Date.now() > expiresAt - 60_000;
+      if (needsRefresh && user._refreshToken) {
+        try {
+          const tokens = await refreshOAuthToken(user._refreshToken);
+          const refreshedUser = {
+            ...user,
+            _idToken: tokens.id_token,
+            _refreshToken: tokens.refresh_token || user._refreshToken,
+            _expiresAt: Date.now() + (tokens.expires_in * 1000),
+          };
+          setUser(refreshedUser);
+          localStorage.setItem('sf_oauth_user', JSON.stringify(refreshedUser));
+          return tokens.id_token;
+        } catch {
+          // Refresh failed — the OAuth session is no longer valid
+          logout();
+          return null;
+        }
+      }
+      if (user._idToken) return user._idToken;
+      if (user._oauthTokens?.id_token) return user._oauthTokens.id_token;
+    }
 
     // Standard Cognito user
     try {

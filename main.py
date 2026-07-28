@@ -114,6 +114,39 @@ def attach_fresh_pdf_url(item: Optional[dict]) -> Optional[dict]:
     return item
 
 
+# ── Input guards ────────────────────────────────────────────────────────────
+
+# Client-side extraction is capped at 50k chars; allow some headroom but reject
+# anything unreasonably large to protect embedding cost and the 400KB DynamoDB
+# item limit.
+MAX_EXTRACTED_TEXT_CHARS = 100_000
+
+# For note generation we feed the document directly (no RAG filtering) so notes
+# cover the whole document. gpt-4o-mini has a 128k-token context window, so this
+# bound stays comfortably within it.
+NOTES_CONTEXT_CHARS = 60_000
+
+
+def enforce_text_limit(text: Optional[str]):
+    if text and len(text) > MAX_EXTRACTED_TEXT_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Document text exceeds the {MAX_EXTRACTED_TEXT_CHARS:,}-character limit.",
+        )
+
+
+def validate_user_s3_key(user_sub: str, s3_key: Optional[str]):
+    """Ensure a client-supplied S3 key belongs to the requesting user.
+
+    Prevents an IDOR where a user could point a document record at another
+    user's object and receive a presigned URL for it.
+    """
+    if not s3_key:
+        return
+    if not s3_key.startswith(f"documents/{user_sub}/"):
+        raise HTTPException(status_code=403, detail="Invalid document storage key.")
+
+
 # ── JWT Auth (stdlib only) ─────────────────────────────────────────────────────
 
 COGNITO_USER_POOL_ID = "ap-south-1_5qo8gZ9cS"
@@ -463,6 +496,7 @@ async def handle(body: RAGRequestBody, user=Depends(get_current_user)):
     if not body.extractedText or len(body.extractedText) < 10:
         return {"error": "Extracted text is too short."}
 
+    enforce_text_limit(body.extractedText)
     client = get_openai_client()
 
     # Step 1: Chunk the text
@@ -1054,6 +1088,8 @@ async def save_cdoc(
 ):
     try:
         pk = f"USER#{user['sub']}"
+        validate_user_s3_key(user["sub"], body.s3Key)
+        enforce_text_limit(body.extractedText)
         doc_id = body.docId or str(uuid_lib.uuid4())[:8]
         sk = f"CDOC#{body.chapterId}#{doc_id}"
         subject_id = find_subject_for_chapter(pk, body.chapterId)
@@ -1077,6 +1113,8 @@ async def save_cdoc(
             chapter_id=body.chapterId,
         )
         return {"success": True, "docId": doc_id, **status}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1267,6 +1305,8 @@ async def save_sdoc(
 ):
     try:
         pk = f"USER#{user['sub']}"
+        validate_user_s3_key(user["sub"], body.s3Key)
+        enforce_text_limit(body.extractedText)
         doc_id = body.docId or str(uuid_lib.uuid4())[:8]
         sk = f"SDOC#{body.subjectId}#{doc_id}"
         data = {
@@ -1288,6 +1328,8 @@ async def save_sdoc(
             subject_id=body.subjectId,
         )
         return {"success": True, "docId": doc_id, **status}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1474,33 +1516,37 @@ async def generate_notes(
         if not body.extractedText or len(body.extractedText) < 10:
             raise HTTPException(status_code=400, detail="Document text too short")
 
+        enforce_text_limit(body.extractedText)
         client = get_openai_client()
 
-        # Use RAG to get most relevant chunks
-        chunks = split_text(body.extractedText, chunk_size=500, overlap=50)
-        chunk_embeddings = embed_texts(client, chunks)
-        context = retrieve_relevant_chunks(
-            client, chunks, chunk_embeddings,
-            query="main topics concepts definitions formulas examples",
-            k=10
-        )
+        # For notes we want COMPLETE, faithful coverage of the document rather
+        # than a query-filtered RAG subset (which drops content the query didn't
+        # match). gpt-4o-mini's 128k-token window comfortably fits the full text,
+        # so feed it directly, bounded by NOTES_CONTEXT_CHARS.
+        context = body.extractedText.strip()[:NOTES_CONTEXT_CHARS]
+        truncated = len(body.extractedText.strip()) > NOTES_CONTEXT_CHARS
 
-        system_prompt = """You are an expert academic note-taker. Generate detailed, structured study notes from the provided study material.
+        system_prompt = """You are an expert academic note-taker. Produce detailed, exam-ready study notes from the provided study material.
 
 Format your response as valid HTML using ONLY these tags:
-- <h3> for topic headings
-- <ul> and <li> for bullet points under each topic
-- <strong> for key terms or important words within bullets
-- <em> for emphasis
+- <h3> for topic/section headings
+- <ul> and <li> for bullet points under each heading
+- <strong> for key terms, names, and important words within bullets
+- <em> for light emphasis
 
-Rules:
-- Create 4-8 topic sections based on the content
-- Each topic must have 4-8 bullet points
-- Bullet points must be detailed and complete sentences, not fragments
-- Include definitions, formulas, examples, and key facts
-- If a formula exists, include it in a bullet point
-- Do NOT include markdown, backticks, or any text outside the HTML
-- Start directly with the first <h3> tag
+Accuracy and coverage rules (critical):
+- Cover the ENTIRE document. Work through it top to bottom and create a heading for every major topic or section present — do not skip material.
+- Follow the document's own logical order.
+- Be FAITHFUL to the source. Only include facts, definitions, and formulas that appear in or directly follow from the material. Never invent facts, numbers, dates, or citations.
+- Reproduce every formula, equation, and definition EXACTLY as written; do not simplify or paraphrase symbols. For each formula, add a bullet explaining what each variable means.
+- Preserve important numbers, units, conditions, and edge cases.
+- Prefer specific, complete sentences over vague fragments. Each bullet should stand on its own for revision.
+
+Structure rules:
+- Create as many <h3> sections as the content needs (typically 5-12 for a full document).
+- Each section should have 4-10 detailed bullet points.
+- Do NOT include markdown, backticks, code fences, or any text outside the HTML.
+- Start directly with the first <h3> tag.
 
 Example format:
 <h3>Topic Name</h3>
@@ -1509,13 +1555,24 @@ Example format:
 <li>Another important point with enough detail to be useful for revision.</li>
 </ul>"""
 
+        user_prompt = (
+            f"Generate comprehensive, faithful study notes from this material "
+            f"({body.fileName}). Cover every section in order.\n\n"
+        )
+        if truncated:
+            user_prompt += (
+                "NOTE: The material is long and has been truncated; summarize the "
+                "portion provided as completely as possible.\n\n"
+            )
+        user_prompt += context
+
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            temperature=0.3,
-            max_tokens=3000,
+            temperature=0.2,
+            max_tokens=4000,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Generate detailed study notes from this material ({body.fileName}):\n\n{context}"}
+                {"role": "user", "content": user_prompt},
             ]
         )
 
@@ -1525,7 +1582,7 @@ Example format:
         import re as re_module
         html_notes = re_module.sub(r'```[\w]*\n?', '', html_notes).strip()
 
-        return {"success": True, "html": html_notes}
+        return {"success": True, "html": html_notes, "truncated": truncated}
     except HTTPException:
         raise
     except Exception as e:
@@ -2167,6 +2224,8 @@ async def upload_pdf(
         pdf_url = upload_pdf_to_s3(file_bytes, s3_key, body.contentType or "application/octet-stream")
 
         return {"success": True, "pdfUrl": pdf_url, "docId": doc_id, "s3Key": s3_key}
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         print(f"PDF upload error: {traceback.format_exc()}")
