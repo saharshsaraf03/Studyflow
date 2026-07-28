@@ -126,6 +126,50 @@ MAX_EXTRACTED_TEXT_CHARS = 100_000
 # bound stays comfortably within it.
 NOTES_CONTEXT_CHARS = 60_000
 
+# Full-document budgets for quiz and analysis so both cover the whole document
+# instead of a narrow RAG slice (kept well within gpt-4o-mini's context window).
+QUIZ_CONTEXT_CHARS = 45_000
+ANALYSIS_CONTEXT_CHARS = 45_000
+
+# Shared adaptive persona so chat, analysis, and quizzes work well for ANY kind
+# of document, not just study material.
+DOC_ADAPTIVE_PREAMBLE = (
+    "The document may be of any kind - academic notes, a textbook, a research "
+    "paper, a legal contract, a business or financial report, technical "
+    "documentation, meeting notes, a manual, a resume, or general prose. First "
+    "infer the document's type and purpose, then adapt your terminology, "
+    "structure, and depth to fit it."
+)
+
+# Shared grounding discipline to reduce hallucination across features.
+GROUNDING_RULES = (
+    "Base every statement strictly on the provided excerpts. Preserve important "
+    "specifics exactly (numbers, dates, names, formulas, clauses, definitions). "
+    "If the excerpts do not contain the answer, say so plainly instead of "
+    "guessing."
+)
+
+
+def parse_json_response(raw: Optional[str]) -> dict:
+    """Parse a model JSON response robustly.
+
+    Handles clean output from response_format=json_object and falls back to
+    extracting the first {...} block for unconstrained responses.
+    """
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    try:
+        match = re.search(r'\{[\s\S]*\}', raw)
+        if match:
+            return json.loads(match.group(0))
+    except Exception:
+        pass
+    return {}
+
 
 def enforce_text_limit(text: Optional[str]):
     if text and len(text) > MAX_EXTRACTED_TEXT_CHARS:
@@ -234,10 +278,12 @@ def embed_texts(client: OpenAI, texts: List[str]) -> np.ndarray:
     """
     Get embeddings for a list of texts.
     Returns a 2D numpy array of shape (len(texts), embedding_dim).
-    text-embedding-3-small produces 1536-dimensional vectors.
+    Uses the same model/dimensions as the vector store (text-embedding-3-large
+    at 1536 dims) so the legacy in-memory path stays consistent with S3 Vectors.
     """
     response = client.embeddings.create(
-        model="text-embedding-3-small",
+        model=vector_store.EMBEDDING_MODEL,
+        dimensions=vector_store.EMBEDDING_DIMENSIONS,
         input=texts,
     )
     vectors = [item.embedding for item in response.data]
@@ -481,8 +527,8 @@ def delete_doc_vectors(user_id: str, item: Optional[dict]):
         pass
 
 
-def legacy_context_for_document(client: OpenAI, extracted_text: str, query: str, k: int = 8) -> str:
-    chunks = split_text(extracted_text, chunk_size=500, overlap=50)
+def legacy_context_for_document(client: OpenAI, extracted_text: str, query: str, k: int = 10) -> str:
+    chunks = split_text(extracted_text, chunk_size=1000, overlap=150)
     if not chunks:
         return ""
     chunk_embeddings = embed_texts(client, chunks)
@@ -500,7 +546,7 @@ async def handle(body: RAGRequestBody, user=Depends(get_current_user)):
     client = get_openai_client()
 
     # Step 1: Chunk the text
-    chunks = split_text(body.extractedText, chunk_size=500, overlap=50)
+    chunks = split_text(body.extractedText, chunk_size=1000, overlap=150)
     if not chunks:
         return {"error": "Could not extract usable chunks from the text."}
 
@@ -554,17 +600,14 @@ Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
             model="gpt-4o-mini",
             temperature=0.3,
             max_tokens=8000,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": llm_system_prompt},
                 {"role": "user", "content": f"Study material (retrieved via RAG):\n\n{context}"}
             ]
         )
         raw = response.choices[0].message.content
-        try:
-            json_match = re.search(r'\{[\s\S]*\}', raw)
-            parsed = json.loads(json_match.group(0))
-        except Exception:
-            parsed = {"raw": raw}
+        parsed = parse_json_response(raw) or {"raw": raw}
         return {"success": True, "data": parsed}
 
     elif body.action == "chat":
@@ -574,15 +617,22 @@ Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
         context = retrieve_relevant_chunks(
             client, chunks, chunk_embeddings,
             query=body.question,
-            k=6
+            k=10
+        )
+        chat_system = (
+            "You are a precise, helpful document assistant. "
+            + DOC_ADAPTIVE_PREAMBLE
+            + " Answer using ONLY the provided excerpts. Be clear and as detailed "
+            "as the question warrants; use bullet points, steps, or short headings "
+            "when they aid clarity. " + GROUNDING_RULES
         )
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.3,
             max_tokens=2000,
             messages=[
-                {"role": "system", "content": "You are a helpful study assistant. Answer questions based ONLY on the provided study material. If the answer is not in the material, say so. Be concise but thorough. Include relevant formulas, definitions, or examples when applicable."},
-                {"role": "user", "content": f"Study material (retrieved via RAG):\n\n{context}\n\nQuestion: {body.question}"}
+                {"role": "system", "content": chat_system},
+                {"role": "user", "content": f"Document excerpts:\n\n{context}\n\nQuestion: {body.question}"}
             ]
         )
         return {"success": True, "answer": response.choices[0].message.content}
@@ -1206,9 +1256,7 @@ async def analyze_cdoc(
                 client, user_id=user["sub"], doc_id=body.docId,
                 question="main topics chapters concepts definitions formulas", top_k=8
             )
-        context = format_vector_context(matches) if matches else legacy_context_for_document(
-            client, extracted_text, "main topics chapters concepts definitions formulas", k=8
-        )
+        context = format_vector_context(matches) if matches else extracted_text[:ANALYSIS_CONTEXT_CHARS]
 
         system_prompt = """You are an expert academic study planner. Given study material, produce:
 1. A STRUCTURED STUDY PLAN
@@ -1231,17 +1279,14 @@ Respond ONLY with valid JSON (no markdown, no backticks):
             model="gpt-4o-mini",
             temperature=0.3,
             max_tokens=8000,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Study material:\n\n{context}"}
             ]
         )
         raw = response.choices[0].message.content
-        try:
-            json_match = re.search(r'\{[\s\S]*\}', raw)
-            ai_results = json.loads(json_match.group(0))
-        except Exception:
-            ai_results = {"raw": raw}
+        ai_results = parse_json_response(raw) or {"raw": raw}
 
         db_put(pk=pk, sk=f"CDOC#{body.chapterId}#{body.docId}", data={**strip_dynamo_keys(item), "aiResults": ai_results})
         return {"success": True, "aiResults": ai_results, "retrieval": "vector" if matches else "legacy"}
@@ -1421,9 +1466,7 @@ async def analyze_sdoc(
                 client, user_id=user["sub"], doc_id=doc_id,
                 question="main topics chapters concepts definitions formulas", top_k=8
             )
-        context = format_vector_context(matches) if matches else legacy_context_for_document(
-            client, extracted_text, "main topics chapters concepts definitions formulas", k=8
-        )
+        context = format_vector_context(matches) if matches else extracted_text[:ANALYSIS_CONTEXT_CHARS]
         system_prompt = """You are an expert academic study planner. Respond ONLY with valid JSON (no markdown):
 {
   "studyPlan": {"title":"","totalEstimatedHours":10,"topics":[{"name":"","estimatedHours":2,"priority":"high","keyPoints":[],"order":1}]},
@@ -1431,17 +1474,14 @@ async def analyze_sdoc(
 }"""
         response = client.chat.completions.create(
             model="gpt-4o-mini", temperature=0.3, max_tokens=8000,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Study material:\n\n{context}"}
             ]
         )
         raw = response.choices[0].message.content
-        try:
-            json_match = re.search(r'\{[\s\S]*\}', raw)
-            ai_results = json.loads(json_match.group(0))
-        except Exception:
-            ai_results = {"raw": raw}
+        ai_results = parse_json_response(raw) or {"raw": raw}
         db_put(pk=pk, sk=f"SDOC#{subject_id}#{doc_id}", data={**strip_dynamo_keys(item), "aiResults": ai_results})
         return {"success": True, "aiResults": ai_results, "retrieval": "vector" if matches else "legacy"}
     except HTTPException:
@@ -1600,41 +1640,51 @@ async def generate_quiz(
             raise HTTPException(status_code=400, detail="Document text too short")
 
         client = get_openai_client()
-        chunks = split_text(body.extractedText, chunk_size=500, overlap=50)
-        chunk_embeddings = embed_texts(client, chunks)
-        context = retrieve_relevant_chunks(
-            client, chunks, chunk_embeddings,
-            query="main concepts definitions formulas exam questions practice",
-            k=10
-        )
+        # Feed the whole document (bounded) so the quiz can cover all of it,
+        # instead of a narrow RAG slice that misses most sections.
+        context = body.extractedText.strip()[:QUIZ_CONTEXT_CHARS]
         count = max(3, min(15, body.count or 8))
+        system_prompt = (
+            "You are an expert assessment writer. Create a high-quality quiz that "
+            "tests genuine understanding of the provided document.\n"
+            + DOC_ADAPTIVE_PREAMBLE + "\n" + GROUNDING_RULES + "\n"
+            "Guidelines:\n"
+            "- Vary the question styles: definitions, conceptual understanding, "
+            "application/scenario, and analysis. Where multiple choice fits, embed "
+            "the options (A, B, C, D) directly in the question text and put the "
+            "correct option in the answer field.\n"
+            "- Spread difficulty roughly evenly across easy, medium, and hard.\n"
+            "- Every answer must be fully supported by the document. Give a clear, "
+            "self-contained answer plus a short explanation grounded in the text.\n"
+            "- Do not ask about trivia, page numbers, or formatting.\n"
+            "Respond ONLY with valid JSON in this exact shape:\n"
+            "{\n"
+            '  "questions": [\n'
+            "    {\n"
+            '      "type": "short_answer | mcq | true_false | conceptual",\n'
+            '      "question": "Question text (include A/B/C/D options here if mcq)",\n'
+            '      "answer": "Correct, self-contained answer",\n'
+            '      "explanation": "Why this is correct, grounded in the document",\n'
+            '      "difficulty": "easy | medium | hard"\n'
+            "    }\n"
+            "  ]\n"
+            "}"
+        )
+        user_prompt = f'Create {count} questions from the document "{body.fileName}".\n\n{context}'
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            temperature=0.25,
-            max_tokens=2500,
+            temperature=0.35,
+            max_tokens=4000,
+            response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": """Create an exam-style study quiz from the provided material.
-Respond ONLY with valid JSON:
-{
-  "questions": [
-    {
-      "type": "short_answer",
-      "question": "Question text",
-      "answer": "Correct answer",
-      "explanation": "Why this answer is correct",
-      "difficulty": "easy|medium|hard"
-    }
-  ]
-}"""},
-                {"role": "user", "content": f"Create {count} questions from {body.fileName}:\n\n{context}"}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
             ]
         )
         raw = response.choices[0].message.content
-        try:
-            json_match = re.search(r'\{[\s\S]*\}', raw)
-            quiz = json.loads(json_match.group(0))
-        except Exception:
-            quiz = {"questions": [], "raw": raw}
+        quiz = parse_json_response(raw) or {"questions": [], "raw": raw}
+        if not isinstance(quiz.get("questions"), list):
+            quiz["questions"] = []
         return {"success": True, "quiz": quiz}
     except HTTPException:
         raise
@@ -1682,20 +1732,25 @@ async def document_chat(
                 user_id=user["sub"],
                 doc_id=body.docId,
                 question=body.question,
-                top_k=8,
+                top_k=10,
             )
         context = format_vector_context(matches) if matches else legacy_context_for_document(
-            client, extracted_text[:30000], body.question, k=8
+            client, extracted_text[:ANALYSIS_CONTEXT_CHARS], body.question, k=10
         )
         if not context:
-            context = extracted_text[:12000]
+            context = extracted_text[:20000]
 
+        system_content = (
+            "You are a precise, helpful document assistant. "
+            + DOC_ADAPTIVE_PREAMBLE
+            + " Answer the user's question using ONLY the provided excerpts. Be as "
+            "detailed as the question warrants and use headings, bullet points, or "
+            "steps when they aid clarity. " + GROUNDING_RULES
+        )
         messages = [
             {
                 "role": "system",
-                "content": """You are a helpful study assistant. Answer using the provided document excerpts.
-If the excerpts do not contain the answer, say what is missing instead of guessing.
-Keep answers clear and useful for exam preparation."""
+                "content": system_content,
             }
         ]
         for msg in (body.history or [])[-6:]:
@@ -1712,7 +1767,7 @@ Keep answers clear and useful for exam preparation."""
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.2,
-            max_tokens=900,
+            max_tokens=1400,
             messages=messages,
         )
         return {
@@ -1943,18 +1998,20 @@ async def global_chat(
                 client,
                 user_id=user["sub"],
                 question=body.question,
-                top_k=8,
+                top_k=12,
             )
             context = format_vector_context(matches)
             if context:
                 messages = [
                     {
                         "role": "system",
-                        "content": """You are a helpful study assistant with access to a student's entire document library.
-Answer questions based on the provided document excerpts.
-Always mention which document(s) your answer comes from.
-If the answer spans multiple documents, synthesize the information clearly.
-If the question cannot be answered from the provided excerpts, say so honestly."""
+                        "content": (
+                            "You are a precise, helpful assistant with access to the "
+                            "user's entire document library. " + DOC_ADAPTIVE_PREAMBLE
+                            + " Answer using ONLY the provided excerpts and always name "
+                            "the document(s) your answer draws from. If the answer spans "
+                            "multiple documents, synthesize them clearly. " + GROUNDING_RULES
+                        ),
                     }
                 ]
                 for msg in (body.history or [])[-6:]:
@@ -1967,7 +2024,7 @@ If the question cannot be answered from the provided excerpts, say so honestly."
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     temperature=0.3,
-                    max_tokens=800,
+                    max_tokens=1400,
                     messages=messages
                 )
                 return {
@@ -1987,7 +2044,7 @@ If the question cannot be answered from the provided excerpts, say so honestly."
             if text and len(text) > 50:
                 all_docs.append({
                     "fileName": item.get("fileName", "Unknown"),
-                    "text": text[:8000],  # cap per doc
+                    "text": text[:12000],  # cap per doc
                 })
 
         # Chapter-level docs
@@ -1997,7 +2054,7 @@ If the question cannot be answered from the provided excerpts, say so honestly."
             if text and len(text) > 50:
                 all_docs.append({
                     "fileName": item.get("fileName", "Unknown"),
-                    "text": text[:8000],
+                    "text": text[:12000],
                 })
 
         if not all_docs:
@@ -2010,27 +2067,29 @@ If the question cannot be answered from the provided excerpts, say so honestly."
         # Embed question
         q_embedding = embed_texts(client, [body.question])[0]
 
-        # For each doc, split into chunks, embed, find best chunk
+        # For each doc, split into chunks, embed, keep its most relevant chunks
         best_chunks = []
         for doc in all_docs:
             try:
-                chunks = split_text(doc["text"], chunk_size=400, overlap=40)
+                chunks = split_text(doc["text"], chunk_size=900, overlap=150)
                 if not chunks:
                     continue
                 embeddings = embed_texts(client, chunks)
                 scores = cosine_similarity(q_embedding, embeddings)
-                top_idx = int(np.argmax(scores))
-                best_chunks.append({
-                    "fileName": doc["fileName"],
-                    "chunk": chunks[top_idx],
-                    "score": float(scores[top_idx]),
-                })
+                # keep this document's top few chunks, not just the single best
+                order = np.argsort(scores)[::-1][:3]
+                for idx in order:
+                    best_chunks.append({
+                        "fileName": doc["fileName"],
+                        "chunk": chunks[int(idx)],
+                        "score": float(scores[int(idx)]),
+                    })
             except Exception:
                 continue
 
-        # Sort by relevance, take top 6
+        # Sort by relevance across the whole library, keep the strongest excerpts
         best_chunks.sort(key=lambda x: x["score"], reverse=True)
-        top_chunks = best_chunks[:6]
+        top_chunks = best_chunks[:10]
 
         if not top_chunks:
             return {
@@ -2053,11 +2112,13 @@ If the question cannot be answered from the provided excerpts, say so honestly."
         messages = [
             {
                 "role": "system",
-                "content": """You are a helpful study assistant with access to a student's entire document library.
-Answer questions based on the provided document excerpts.
-Always mention which document(s) your answer comes from.
-If the answer spans multiple documents, synthesize the information clearly.
-If the question cannot be answered from the provided excerpts, say so honestly."""
+                "content": (
+                    "You are a precise, helpful assistant with access to the "
+                    "user's entire document library. " + DOC_ADAPTIVE_PREAMBLE
+                    + " Answer using ONLY the provided excerpts and always name "
+                    "the document(s) your answer draws from. If the answer spans "
+                    "multiple documents, synthesize them clearly. " + GROUNDING_RULES
+                ),
             }
         ]
 
@@ -2074,7 +2135,7 @@ If the question cannot be answered from the provided excerpts, say so honestly."
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.3,
-            max_tokens=800,
+            max_tokens=1400,
             messages=messages
         )
 

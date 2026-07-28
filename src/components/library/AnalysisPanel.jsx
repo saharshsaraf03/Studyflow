@@ -59,7 +59,7 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, sourceType, sourceId, on
             history,
           })
         : await callRAG({
-            extractedText: extractedText.slice(0, 12000),
+            extractedText: extractedText.slice(0, 45000),
             action: 'chat',
             question: message,
           });
@@ -82,7 +82,7 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, sourceType, sourceId, on
     setRevealedAnswers({});
     try {
       const result = await generateQuiz({
-        extractedText: extractedText.slice(0, 20000),
+        extractedText: extractedText.slice(0, 45000),
         fileName: doc?.fileName || 'document',
         count: 8,
       });

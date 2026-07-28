@@ -57,7 +57,7 @@ The app is designed so a student can upload course material once, keep it stored
 ### Persistent RAG With S3 Vectors
 
 - Splits document text into chunks.
-- Generates embeddings with OpenAI `text-embedding-3-small`.
+- Generates embeddings with OpenAI `text-embedding-3-large` (1536 dims).
 - Stores embeddings and chunk metadata in Amazon S3 Vectors.
 - Uses vector search for document chat and global library chat.
 - Includes batch backfill for documents uploaded before vector indexing existed.
@@ -342,9 +342,9 @@ ALLOWED_ORIGINS=
 S3_VECTOR_REGION=ap-south-1
 S3_VECTOR_BUCKET=studyflow-vectors-prod
 S3_VECTOR_INDEX=studyflow-document-chunks-v1
-EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_MODEL=text-embedding-3-large
 EMBEDDING_DIMENSIONS=1536
-EMBEDDING_VERSION=1
+EMBEDDING_VERSION=2
 VECTOR_RAG_ENABLED=false
 VECTOR_INDEXING_ENABLED=true
 ```

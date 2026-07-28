@@ -9,9 +9,14 @@ import boto3
 VECTOR_REGION = os.environ.get("S3_VECTOR_REGION", "ap-south-1")
 VECTOR_BUCKET = os.environ.get("S3_VECTOR_BUCKET", "")
 VECTOR_INDEX = os.environ.get("S3_VECTOR_INDEX", "")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
+# text-embedding-3-large gives noticeably better retrieval than 3-small. We keep
+# the output at 1536 dimensions so the existing S3 Vectors index (created at dim
+# 1536) stays compatible — no index recreation needed. EMBEDDING_VERSION is
+# bumped to 2 so older 3-small vectors are ignored by queries until docs are
+# re-indexed; the query filter matches on embeddingVersion.
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-large")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "1536"))
-EMBEDDING_VERSION = int(os.environ.get("EMBEDDING_VERSION", "1"))
+EMBEDDING_VERSION = int(os.environ.get("EMBEDDING_VERSION", "2"))
 VECTOR_RAG_ENABLED = os.environ.get("VECTOR_RAG_ENABLED", "false").lower() == "true"
 VECTOR_INDEXING_ENABLED = os.environ.get("VECTOR_INDEXING_ENABLED", "true").lower() == "true"
 
