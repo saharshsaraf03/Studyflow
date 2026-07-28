@@ -234,6 +234,70 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 
+# ── Rate limiting & per-user AI quota ─────────────────────────────────────────
+#
+# Protects the expensive OpenAI/embedding endpoints from cost-based abuse:
+#   * a short in-memory burst limiter (per process) blocks rapid loops
+#   * a DynamoDB daily counter enforces a hard per-user daily cap that survives
+#     restarts and works across instances
+# Both are tunable via environment variables.
+
+AI_DAILY_QUOTA = int(os.environ.get("AI_DAILY_QUOTA", "200"))
+AI_BURST_MAX = int(os.environ.get("AI_BURST_MAX", "15"))
+AI_BURST_WINDOW_SECONDS = int(os.environ.get("AI_BURST_WINDOW_SECONDS", "60"))
+
+_burst_hits: dict = {}
+
+
+def _check_burst_limit(user_sub: str):
+    now = time.time()
+    window_start = now - AI_BURST_WINDOW_SECONDS
+    hits = [t for t in _burst_hits.get(user_sub, []) if t > window_start]
+    if len(hits) >= AI_BURST_MAX:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests in a short time. Please slow down and try again shortly.",
+        )
+    hits.append(now)
+    _burst_hits[user_sub] = hits
+    # Opportunistic cleanup so the map does not grow without bound.
+    if len(_burst_hits) > 5000:
+        for key in [k for k, v in _burst_hits.items() if not any(t > window_start for t in v)]:
+            _burst_hits.pop(key, None)
+
+
+def _enforce_daily_quota(user_sub: str):
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    try:
+        resp = table.update_item(
+            Key={"PK": f"USER#{user_sub}", "SK": f"USAGE#AI#{today}"},
+            UpdateExpression="SET #ua = :now, #exp = :exp ADD #c :one",
+            ExpressionAttributeNames={"#c": "count", "#ua": "updatedAt", "#exp": "expiresAt"},
+            ExpressionAttributeValues={
+                ":one": 1,
+                ":now": datetime.utcnow().isoformat(),
+                ":exp": int(time.time()) + 172800,  # auto-expire after 48h if TTL is enabled
+            },
+            ReturnValues="UPDATED_NEW",
+        )
+        count = int(resp.get("Attributes", {}).get("count", 0))
+    except Exception:
+        # Fail open: never block a legitimate user because metering hiccuped.
+        return
+    if count > AI_DAILY_QUOTA:
+        raise HTTPException(
+            status_code=429,
+            detail="You've reached today's AI usage limit. It resets tomorrow (UTC).",
+        )
+
+
+async def enforce_ai_limits(user=Depends(get_current_user)):
+    """Auth + rate-limit dependency for the expensive AI endpoints."""
+    _check_burst_limit(user["sub"])
+    _enforce_daily_quota(user["sub"])
+    return user
+
+
 # ── RAG Pipeline (OpenAI Embeddings + numpy cosine similarity) ─────────────────
 #
 # Analogy: Previously we had a forklift (FAISS + PyTorch + HuggingFace) to
@@ -288,6 +352,37 @@ def embed_texts(client: OpenAI, texts: List[str]) -> np.ndarray:
     )
     vectors = [item.embedding for item in response.data]
     return np.array(vectors, dtype=np.float32)
+
+
+# In-memory cache of per-document chunk embeddings for the global chatbot's
+# legacy (non-vector) path. Re-embedding every document on every question is the
+# single most expensive operation in the app; caching by (user, doc, content
+# hash) means an unchanged document is embedded only once per process lifetime.
+_LIB_EMBED_CACHE: dict = {}
+_LIB_EMBED_CACHE_MAX = 512
+
+
+def _lib_cache_get_or_embed(client: OpenAI, user_sub: str, doc_id: str, text: str):
+    """Return (chunks, embeddings) for a library document, using a cache keyed on
+    the document's content hash so edits invalidate stale embeddings."""
+    key = f"{user_sub}:{doc_id}:{vector_store.content_hash(text)}"
+    cached = _LIB_EMBED_CACHE.get(key)
+    if cached is not None:
+        # Refresh recency for simple LRU-ish eviction.
+        _LIB_EMBED_CACHE.pop(key, None)
+        _LIB_EMBED_CACHE[key] = cached
+        return cached["chunks"], cached["embeddings"]
+    chunks = split_text(text, chunk_size=900, overlap=150)
+    if not chunks:
+        return [], None
+    embeddings = embed_texts(client, chunks)
+    if len(_LIB_EMBED_CACHE) >= _LIB_EMBED_CACHE_MAX:
+        try:
+            _LIB_EMBED_CACHE.pop(next(iter(_LIB_EMBED_CACHE)))
+        except StopIteration:
+            pass
+    _LIB_EMBED_CACHE[key] = {"chunks": chunks, "embeddings": embeddings}
+    return chunks, embeddings
 
 
 def cosine_similarity(query_vec: np.ndarray, chunk_vecs: np.ndarray) -> np.ndarray:
@@ -538,7 +633,7 @@ def legacy_context_for_document(client: OpenAI, extracted_text: str, query: str,
 # ── RAG Route (v1 compatible path, now using OpenAI embeddings) ────────────────
 
 @app.post("/")
-async def handle(body: RAGRequestBody, user=Depends(get_current_user)):
+async def handle(body: RAGRequestBody, user=Depends(enforce_ai_limits)):
     if not body.extractedText or len(body.extractedText) < 10:
         return {"error": "Extracted text is too short."}
 
@@ -1237,7 +1332,7 @@ async def delete_cdoc(
 async def analyze_cdoc(
     request: Request,
     body: AnalyzeDocRequest,
-    user=Depends(get_current_user)
+    user=Depends(enforce_ai_limits)
 ):
     try:
         pk = f"USER#{user['sub']}"
@@ -1446,7 +1541,7 @@ async def delete_sdoc(
 @app.post("/api/sdocs/analyze")
 async def analyze_sdoc(
     request: Request,
-    user=Depends(get_current_user)
+    user=Depends(enforce_ai_limits)
 ):
     try:
         body = await request.json()
@@ -1545,7 +1640,7 @@ class GenerateQuizRequest(BaseModel):
 async def generate_notes(
     request: Request,
     body: GenerateNotesRequest,
-    user=Depends(get_current_user)
+    user=Depends(enforce_ai_limits)
 ):
     """
     Generate structured study notes from document text.
@@ -1633,7 +1728,7 @@ Example format:
 async def generate_quiz(
     request: Request,
     body: GenerateQuizRequest,
-    user=Depends(get_current_user)
+    user=Depends(enforce_ai_limits)
 ):
     try:
         if not body.extractedText or len(body.extractedText) < 10:
@@ -1702,7 +1797,7 @@ async def generate_quiz(
 async def document_chat(
     request: Request,
     body: DocumentChatRequest,
-    user=Depends(get_current_user)
+    user=Depends(enforce_ai_limits)
 ):
     try:
         if not body.question or len(body.question.strip()) < 2:
@@ -1974,7 +2069,7 @@ class GlobalChatRequest(BaseModel):
 async def global_chat(
     request: Request,
     body: GlobalChatRequest,
-    user=Depends(get_current_user)
+    user=Depends(enforce_ai_limits)
 ):
     """
     Global chatbot — searches across ALL documents in the user's library.
@@ -2043,6 +2138,7 @@ async def global_chat(
             text = item.get("extractedText", "")
             if text and len(text) > 50:
                 all_docs.append({
+                    "docId": item.get("docId", "unknown"),
                     "fileName": item.get("fileName", "Unknown"),
                     "text": text[:12000],  # cap per doc
                 })
@@ -2053,6 +2149,7 @@ async def global_chat(
             text = item.get("extractedText", "")
             if text and len(text) > 50:
                 all_docs.append({
+                    "docId": item.get("docId", "unknown"),
                     "fileName": item.get("fileName", "Unknown"),
                     "text": text[:12000],
                 })
@@ -2067,14 +2164,15 @@ async def global_chat(
         # Embed question
         q_embedding = embed_texts(client, [body.question])[0]
 
-        # For each doc, split into chunks, embed, keep its most relevant chunks
+        # For each doc, reuse cached chunk embeddings and keep its top chunks
         best_chunks = []
         for doc in all_docs:
             try:
-                chunks = split_text(doc["text"], chunk_size=900, overlap=150)
-                if not chunks:
+                chunks, embeddings = _lib_cache_get_or_embed(
+                    client, user["sub"], doc["docId"], doc["text"]
+                )
+                if not chunks or embeddings is None:
                     continue
-                embeddings = embed_texts(client, chunks)
                 scores = cosine_similarity(q_embedding, embeddings)
                 # keep this document's top few chunks, not just the single best
                 order = np.argsort(scores)[::-1][:3]
