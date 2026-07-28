@@ -2247,6 +2247,144 @@ async def global_chat(
 
 
 
+# ── Semantic Search ───────────────────────────────────────────────────────────
+
+class SemanticSearchRequest(BaseModel):
+    query: str
+    topK: Optional[int] = 8
+    docId: Optional[str] = None  # optional: restrict to a single document
+
+
+@app.post("/api/search")
+async def semantic_search(
+    request: Request,
+    body: SemanticSearchRequest,
+    user=Depends(enforce_ai_limits),
+):
+    """Semantic search across the user's library (or a single document).
+
+    Returns ranked passages with a snippet, source document, and score.
+    Uses the S3 Vectors index when available and falls back to the cached
+    in-memory cosine path otherwise.
+    """
+    try:
+        query = (body.query or "").strip()
+        if len(query) < 2:
+            raise HTTPException(status_code=400, detail="Query too short")
+        top_k = max(1, min(20, body.topK or 8))
+        pk = f"USER#{user['sub']}"
+        client = get_openai_client()
+
+        # Preferred path: S3 Vectors semantic index.
+        if vector_store.should_query():
+            matches = vector_store.query_document_chunks(
+                client,
+                user_id=user["sub"],
+                question=query,
+                doc_id=body.docId,
+                top_k=top_k,
+            )
+            if matches:
+                results = []
+                for m in matches:
+                    distance = m.get("distance")
+                    results.append({
+                        "fileName": m.get("fileName", "Unknown"),
+                        "docId": m.get("docId"),
+                        "chunkIndex": m.get("chunkIndex"),
+                        "snippet": (m.get("text", "") or "")[:400],
+                        "score": round(1.0 - float(distance), 4) if distance is not None else None,
+                    })
+                return {"success": True, "results": results, "retrieval": "vector"}
+
+        # Fallback: cached in-memory cosine over stored document text.
+        docs = []
+        for prefix in ("SDOC#", "CDOC#"):
+            for item in db_query(pk=pk, sk_prefix=prefix):
+                if body.docId and item.get("docId") != body.docId:
+                    continue
+                text = item.get("extractedText", "")
+                if text and len(text) > 50:
+                    docs.append({
+                        "docId": item.get("docId", "unknown"),
+                        "fileName": item.get("fileName", "Unknown"),
+                        "text": text[:12000],
+                    })
+        if not docs:
+            return {"success": True, "results": [], "retrieval": "legacy"}
+
+        q_vec = embed_texts(client, [query])[0]
+        scored = []
+        for d in docs:
+            chunks, embeddings = _lib_cache_get_or_embed(client, user["sub"], d["docId"], d["text"])
+            if not chunks or embeddings is None:
+                continue
+            sims = cosine_similarity(q_vec, embeddings)
+            order = np.argsort(sims)[::-1][:3]
+            for idx in order:
+                scored.append({
+                    "fileName": d["fileName"],
+                    "docId": d["docId"],
+                    "chunkIndex": int(idx),
+                    "snippet": chunks[int(idx)][:400],
+                    "score": round(float(sims[int(idx)]), 4),
+                })
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return {"success": True, "results": scored[:top_k], "retrieval": "legacy"}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Search failed")
+
+
+# ── Usage & Library Stats ─────────────────────────────────────────────────────
+
+@app.get("/api/usage")
+async def usage_stats(request: Request, user=Depends(get_current_user)):
+    """Per-user AI usage (against the daily quota) plus library counts, for a
+    stats/observability dashboard."""
+    try:
+        from datetime import timedelta
+
+        pk = f"USER#{user['sub']}"
+
+        # AI usage for the last 7 days (UTC), oldest first.
+        days = []
+        week_total = 0
+        for i in range(6, -1, -1):
+            day = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
+            item = db_get(pk=pk, sk=f"USAGE#AI#{day}")
+            count = int(item.get("count", 0)) if item else 0
+            week_total += count
+            days.append({"date": day, "count": count})
+        today_count = days[-1]["count"] if days else 0
+
+        subjects = db_query(pk=pk, sk_prefix="SUBJECT#")
+        chapters = db_query(pk=pk, sk_prefix="CHAPTER#")
+        sdocs = db_query(pk=pk, sk_prefix="SDOC#")
+        cdocs = db_query(pk=pk, sk_prefix="CDOC#")
+        indexed = sum(1 for d in (sdocs + cdocs) if d.get("embeddingStatus") == "ready")
+
+        return {
+            "success": True,
+            "ai": {
+                "today": today_count,
+                "dailyQuota": AI_DAILY_QUOTA,
+                "remainingToday": max(0, AI_DAILY_QUOTA - today_count),
+                "weekTotal": week_total,
+                "last7Days": days,
+            },
+            "library": {
+                "subjects": len(subjects),
+                "chapters": len(chapters),
+                "documents": len(sdocs) + len(cdocs),
+                "indexedDocuments": indexed,
+            },
+        }
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to load usage stats")
+
+
 # ── Export All Data ───────────────────────────────────────────────────────────
 
 @app.get("/api/export")

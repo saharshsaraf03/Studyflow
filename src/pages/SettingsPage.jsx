@@ -1,13 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   User, Bell, Palette, Clock, Database,
   Download, Trash2, Check, ChevronDown,
-  Save, KeyRound, Loader2,
+  Save, KeyRound, Loader2, Activity,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
-import { migrateVectors } from '../utils/api';
+import { migrateVectors, getUsage } from '../utils/api';
 
 /* ── Reusable primitives matching Claude Design ── */
 
@@ -119,6 +119,26 @@ const SettingsPage = () => {
   const [exporting, setExporting] = useState(false);
   const [indexingLibrary, setIndexingLibrary] = useState(false);
   const [indexingMsg, setIndexingMsg] = useState('');
+
+  // Usage stats
+  const [usage, setUsage] = useState(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+  const [usageError, setUsageError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const data = await getUsage();
+        if (active) setUsage(data);
+      } catch (err) {
+        if (active) setUsageError(err.message || 'Could not load usage.');
+      } finally {
+        if (active) setUsageLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   // Preferences state
   const [emailNotifs, setEmailNotifs] = useState(true);
@@ -587,6 +607,93 @@ const SettingsPage = () => {
               last
             />
           </SettingCard>
+
+          {/* ── Usage ── */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <SettingCard title="Usage" subtitle="Your AI activity and library at a glance">
+              {usageLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Loading usage…
+                </div>
+              ) : usageError ? (
+                <p style={{ fontSize: 13, color: '#FF6B6B', margin: 0 }}>{usageError}</p>
+              ) : usage ? (
+                <>
+                  {/* Daily AI quota */}
+                  <div style={{ marginBottom: 18 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        <Activity size={15} /> AI requests today
+                      </div>
+                      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                        {usage.ai?.today ?? 0} / {usage.ai?.dailyQuota ?? 0}
+                      </span>
+                    </div>
+                    <div style={{ height: 8, borderRadius: 999, background: 'var(--border-light)', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${Math.min(100, ((usage.ai?.today || 0) / (usage.ai?.dailyQuota || 1)) * 100)}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, #6C5CE7, #00D2A0)',
+                        transition: 'width 0.3s',
+                      }} />
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                      {usage.ai?.remainingToday ?? 0} remaining today · resets at midnight UTC
+                    </div>
+                  </div>
+
+                  {/* 7-day mini bar chart */}
+                  {(() => {
+                    const days = usage.ai?.last7Days || [];
+                    const max = Math.max(1, ...days.map(d => d.count || 0));
+                    return (
+                      <div style={{ marginBottom: 18 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>Last 7 days</div>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 72 }}>
+                          {days.map(d => (
+                            <div key={d.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.count}</div>
+                              <div
+                                title={`${d.date}: ${d.count} requests`}
+                                style={{
+                                  width: '100%', maxWidth: 26,
+                                  height: Math.max(3, Math.round(((d.count || 0) / max) * 46)),
+                                  borderRadius: 4,
+                                  background: d.count ? 'linear-gradient(180deg, #6C5CE7, #8B7CF0)' : 'var(--border-light)',
+                                }}
+                              />
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{(d.date || '').slice(5)}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                          {usage.ai?.weekTotal ?? 0} AI requests this week
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Library stat tiles */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                    {[
+                      { label: 'Subjects', value: usage.library?.subjects ?? 0 },
+                      { label: 'Chapters', value: usage.library?.chapters ?? 0 },
+                      { label: 'Documents', value: usage.library?.documents ?? 0 },
+                      { label: 'Indexed', value: usage.library?.indexedDocuments ?? 0 },
+                    ].map(stat => (
+                      <div key={stat.label} style={{
+                        padding: 14, borderRadius: 12, background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-light)', textAlign: 'center',
+                      }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{stat.value}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{stat.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </SettingCard>
+          </div>
 
           {/* ── Data & storage ── */}
           <SettingCard title="Data & storage" subtitle="Exports and account management">

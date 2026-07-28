@@ -342,3 +342,9 @@ export async function uploadPdfToS3({ file, docId }) {
     }),
   });
 }
+
+// ── Usage & Stats ─────────────────────────────────────────────────────────────
+
+export async function getUsage() {
+  return apiFetch('/api/usage');
+}
