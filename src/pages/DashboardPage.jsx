@@ -12,7 +12,7 @@ import SubjectPieChart from '../components/Charts/SubjectPieChart';
 import PlannedVsActualChart from '../components/Charts/PlannedVsActualChart';
 import { recalculatePlan, calculateStats, getSubjectColor } from '../utils/PlannerEngine';
 
-const DashboardPage = ({ planData, setPlanData }) => {
+const DashboardPage = ({ planData, setPlanData, planLoading }) => {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [activeTab, setActiveTab] = useState('schedule');
@@ -69,6 +69,18 @@ const DashboardPage = ({ planData, setPlanData }) => {
   };
 
   if (!planData || !planData.plan) {
+    // Still fetching from the cloud in the background — show a loader instead of
+    // the empty state so we don't flash "No Study Plan Found" before data arrives.
+    if (planLoading) {
+      return (
+        <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 rounded-full border-2 border-transparent border-t-primary-500 animate-spin" />
+            <p className="text-sm text-surface-500">Loading your study plan...</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4">
         <div className="sf-card p-10 text-center max-w-md">

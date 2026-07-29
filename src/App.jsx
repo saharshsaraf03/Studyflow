@@ -31,33 +31,36 @@ function AppInner() {
   useEffect(() => {
     if (!isAuthenticated || isLoading) return;
     async function loadFromCloud() {
-      setPlanLoading(true);
+      // 1. Local-first: render instantly from the localStorage backup so the UI
+      //    never waits on a cold backend. Only block with a spinner when we have
+      //    nothing local to show yet (e.g. first load on this device).
+      const backup = localStorage.getItem('sf_plan_backup');
+      let hasLocal = false;
+      if (backup) {
+        try { setPlanDataState(JSON.parse(backup)); hasLocal = true; } catch {}
+      }
+      if (!hasLocal) setPlanLoading(true);
+
+      // 2. Reconcile with the cloud in the background.
       try {
         const result = await loadPlanner();
         if (result.planData) {
-          // Cloud load succeeded — also update localStorage as backup
+          // Cloud load succeeded — adopt it and refresh the local backup.
           setPlanDataState(result.planData);
           localStorage.setItem('sf_plan_backup', JSON.stringify(result.planData));
+        } else if (backup) {
+          // No cloud data but we have a local backup — re-save it to the cloud.
+          try { await savePlanner(JSON.parse(backup)); } catch {}
         } else {
-          // No cloud data — check localStorage backup
-          const backup = localStorage.getItem('sf_plan_backup');
-          if (backup) {
-            const parsed = JSON.parse(backup);
-            setPlanDataState(parsed);
-            // Re-save to cloud since it was missing
-            try { await savePlanner(parsed); } catch {}
-          } else {
-            const localData = loadData();
-            if (localData) { setLocalDataForMigration(localData); setShowMigrationModal(true); }
-          }
+          // Nothing anywhere — offer to migrate legacy local data if present.
+          const localData = loadData();
+          if (localData) { setLocalDataForMigration(localData); setShowMigrationModal(true); }
         }
       } catch (err) {
         console.error('Cloud load failed:', err);
-        // Fall back to localStorage backup
-        const backup = localStorage.getItem('sf_plan_backup');
-        if (backup) {
-          try { setPlanDataState(JSON.parse(backup)); } catch {}
-        } else {
+        // We already rendered from the backup if it existed. Otherwise fall back
+        // to any legacy local data.
+        if (!hasLocal) {
           const localData = loadData();
           if (localData) setPlanDataState(localData);
         }
@@ -94,7 +97,9 @@ function AppInner() {
     setShowMigrationModal(false); setLocalDataForMigration(null); clearData();
   };
 
-  if (isLoading || planLoading) {
+  // Only block on auth — never on the planner load. The planner is fetched in the
+  // background (see loadFromCloud) so a cold backend can't stall the whole app.
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-surface-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -135,7 +140,7 @@ function AppInner() {
                       <Routes>
                         <Route path="/" element={<HomePage hasPlan={!!planData} />} />
                         <Route path="/setup" element={<SetupPage setPlanData={setPlanData} />} />
-                        <Route path="/dashboard" element={<DashboardPage planData={planData} setPlanData={setPlanData} />} />
+                        <Route path="/dashboard" element={<DashboardPage planData={planData} setPlanData={setPlanData} planLoading={planLoading} />} />
                         <Route path="/settings" element={<SettingsPage />} />
                         <Route path="/help" element={<HelpPage />} />
                       </Routes>
