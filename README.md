@@ -1,4 +1,4 @@
-# StudyFlow - AI-Powered Study Planner and Document RAG Platform
+   # StudyFlow - AI Knowledge Base Assistant
 
 StudyFlow is a full-stack study productivity platform that helps students organize subjects, upload study material, generate AI study plans, chat with documents, create quizzes, and track progress. The upgraded version uses persistent cloud storage and a production-style RAG pipeline powered by OpenAI embeddings and Amazon S3 Vectors.
 
