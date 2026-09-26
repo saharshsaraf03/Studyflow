@@ -156,15 +156,26 @@ const COGNITO_DOMAIN = 'https://ap-south-15qo8gz9cs.auth.ap-south-1.amazoncognit
 const OAUTH_CLIENT_ID = '5e14397oapv9ubug1p2um2c3ie';
 
 /**
+ * The redirect_uri sent to Cognito: the origin the app is served from.
+ * Cognito compares it character-for-character against the app client's
+ * "Allowed callback URLs", so every origin (e.g. https://ddr1k3uxkbzvy.cloudfront.net,
+ * http://localhost:3000) must be listed there exactly — no trailing slash, same
+ * scheme and port — or the hosted UI fails with error=redirect_mismatch.
+ * The authorize and token requests must send the same value.
+ */
+function getRedirectUri() {
+  return window.location.origin;
+}
+
+/**
  * Redirect to Cognito's Google OAuth endpoint.
  * Cognito handles Google login and redirects back with ?code=...
  */
 export function signInWithGoogle() {
-  const redirectUri = window.location.origin;
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: OAUTH_CLIENT_ID,
-    redirect_uri: redirectUri,
+    redirect_uri: getRedirectUri(),
     identity_provider: 'Google',
     scope: 'email openid profile',
   });
@@ -177,14 +188,13 @@ export function signInWithGoogle() {
  * Returns { tokens, user: { sub, email, name, idToken, accessToken } }
  */
 export async function handleOAuthCallback(code) {
-  const redirectUri = window.location.origin;
   const response = await fetch(`${COGNITO_DOMAIN}/oauth2/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: OAUTH_CLIENT_ID,
-      redirect_uri: redirectUri,
+      redirect_uri: getRedirectUri(),
       code,
     }),
   });

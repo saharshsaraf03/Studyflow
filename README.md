@@ -303,11 +303,24 @@ npm install
 npm run dev
 ```
 
-Vite will print the local URL, usually:
+The dev server runs at:
 
 ```text
-http://localhost:5173
+http://localhost:3000
 ```
+
+The port is fixed (`strictPort` in `vite.config.js`), so if something else is using 3000, `npm run dev` exits instead of moving to 3001. Free the port rather than changing it, or Google sign-in will stop working (see below).
+
+### Google sign-in (Cognito callback URLs)
+
+"Continue with Google" sends users to the Cognito hosted UI with `redirect_uri` set to the origin the app is running on (`window.location.origin`). Cognito accepts it only if that exact string is listed under **Allowed callback URLs** on the app client (AWS console → Cognito → User pools → select the pool → App clients → select the client → Login pages → Edit; both IDs are in `src/utils/auth.js`):
+
+```text
+https://ddr1k3uxkbzvy.cloudfront.net
+http://localhost:3000
+```
+
+The match is exact: no trailing slash, no path, and the same scheme and port. Any other origin (a different port, `127.0.0.1`, a new domain) needs its own entry, or Google sign-in fails with Cognito's "Something went wrong" page and `error=redirect_mismatch` in the URL.
 
 ### Backend
 
