@@ -93,8 +93,10 @@ def create_s3_presigned_url(key: str, expires_in: int = 3600) -> str:
             Params={"Bucket": S3_BUCKET, "Key": key},
             ExpiresIn=expires_in,
         )
-    except Exception:
-        return f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{key}"
+    except Exception as e:
+        # Never fall back to a public object URL: the bucket is private.
+        print(f"create_s3_presigned_url failed for {key}: {e}")
+        return ""
 
 
 def delete_s3_object(key: Optional[str]):
