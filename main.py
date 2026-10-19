@@ -2518,6 +2518,128 @@ async def export_all_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── Account Deletion ──────────────────────────────────────────────────────────
+
+def _query_all_user_items(pk: str) -> list:
+    """Every item under the user's partition key, across all SK prefixes."""
+    items = []
+    query_args = {
+        "KeyConditionExpression": Key("PK").eq(pk),
+        "ProjectionExpression": "#pk, #sk, #doc, #cc, #ev, #s3",
+        "ExpressionAttributeNames": {
+            "#pk": "PK", "#sk": "SK", "#doc": "docId",
+            "#cc": "chunkCount", "#ev": "embeddingVersion", "#s3": "s3Key",
+        },
+    }
+    while True:
+        resp = table.query(**query_args)
+        items.extend(resp.get("Items", []))
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_args["ExclusiveStartKey"] = last_key
+    return [decimal_to_python(item) for item in items]
+
+
+def _delete_user_s3_prefix(prefix: str) -> dict:
+    """Delete every S3 object under prefix. Returns counts; never raises."""
+    deleted, errors = 0, []
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+            keys = [{"Key": obj["Key"]} for obj in page.get("Contents", []) or []]
+            for start in range(0, len(keys), 1000):
+                batch = keys[start:start + 1000]
+                resp = s3.delete_objects(
+                    Bucket=S3_BUCKET,
+                    Delete={"Objects": batch, "Quiet": True},
+                )
+                failed = resp.get("Errors", []) or []
+                deleted += len(batch) - len(failed)
+                errors.extend(f"{e.get('Key')}: {e.get('Code')}" for e in failed)
+    except Exception as e:
+        errors.append(f"list/delete failed: {e}")
+    return {"deleted": deleted, "errors": errors}
+
+
+@app.delete("/api/account")
+async def delete_account(request: Request, user=Depends(get_current_user)):
+    """Permanently delete all of the caller's data.
+
+    Removes S3 Vectors for every document, every S3 object under
+    documents/{sub}/, and every DynamoDB item under USER#{sub}. Each step is
+    best-effort and the endpoint is idempotent, so it can be safely retried.
+    The Cognito user itself is deleted by the frontend afterwards.
+    """
+    user_sub = user["sub"]
+    pk = f"USER#{user_sub}"
+    report = {"vectorsDeleted": 0, "s3ObjectsDeleted": 0, "itemsDeleted": 0, "errors": []}
+
+    try:
+        items = _query_all_user_items(pk)
+    except Exception as e:
+        print(f"delete_account: query failed for {pk}: {e}")
+        raise HTTPException(status_code=500, detail="Could not read account data. Please try again.")
+
+    # 1. S3 Vectors for every library document.
+    for item in items:
+        sk = item.get("SK", "")
+        if sk.startswith("SDOC#") or sk.startswith("CDOC#"):
+            try:
+                vector_store.delete_document_vectors(
+                    user_sub,
+                    item.get("docId"),
+                    int(item.get("chunkCount") or 0),
+                    int(item.get("embeddingVersion") or vector_store.EMBEDDING_VERSION),
+                )
+                report["vectorsDeleted"] += int(item.get("chunkCount") or 0)
+            except Exception as e:
+                report["errors"].append(f"vectors {item.get('docId')}: {e}")
+
+    # 2. Every uploaded file under the user's prefix (covers orphaned uploads too).
+    s3_result = _delete_user_s3_prefix(f"documents/{user_sub}/")
+    report["s3ObjectsDeleted"] = s3_result["deleted"]
+    report["errors"].extend(f"s3 {err}" for err in s3_result["errors"])
+    if s3_result["errors"]:
+        # Fallback for when s3:ListBucket is not granted: delete known keys directly.
+        for item in items:
+            key = item.get("s3Key")
+            if key and key.startswith(f"documents/{user_sub}/"):
+                delete_s3_object(key)
+
+    # 3. All DynamoDB items under the user's partition.
+    try:
+        with table.batch_writer() as batch:
+            for item in items:
+                batch.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
+        report["itemsDeleted"] = len(items)
+    except Exception as e:
+        print(f"delete_account: batch delete failed for {pk}, falling back: {e}")
+        for item in items:
+            try:
+                db_delete(pk=item["PK"], sk=item["SK"])
+                report["itemsDeleted"] += 1
+            except Exception as item_err:
+                report["errors"].append(f"item {item.get('SK')}: {item_err}")
+
+    _burst_hits.pop(user_sub, None)
+    if report["errors"]:
+        print(f"delete_account: completed with errors for {pk}: {report['errors'][:20]}")
+
+    remaining = len(items) - report["itemsDeleted"]
+    if remaining > 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Account data was only partially deleted ({remaining} items remain). Please try again.",
+        )
+    return {
+        "success": True,
+        "itemsDeleted": report["itemsDeleted"],
+        "s3ObjectsDeleted": report["s3ObjectsDeleted"],
+        "vectorsDeleted": report["vectorsDeleted"],
+        "warnings": len(report["errors"]),
+    }
+
 
 # ── PDF Upload to S3 ──────────────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
-import { migrateVectors, getUsage } from '../utils/api';
+import { migrateVectors, getUsage, deleteAccount } from '../utils/api';
 
 /* ── Reusable primitives matching Claude Design ── */
 
@@ -101,8 +101,9 @@ const SliderRow = ({ label, sub, value, onChange, min = 0.5, max = 12, step = 0.
 /* ── Main Settings Page ── */
 
 const SettingsPage = () => {
-  const { user, getToken } = useAuth();
+  const { user, getToken, getAccessToken, isOAuthUser, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  const navigate = useNavigate();
 
   // Profile state — load from localStorage for persistence
   const savedProfile = JSON.parse(localStorage.getItem('sf_profile') || '{}');
@@ -119,6 +120,10 @@ const SettingsPage = () => {
   const [exporting, setExporting] = useState(false);
   const [indexingLibrary, setIndexingLibrary] = useState(false);
   const [indexingMsg, setIndexingMsg] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState('');
 
   // Usage stats
   const [usage, setUsage] = useState(null);
@@ -297,13 +302,48 @@ const SettingsPage = () => {
     }
   };
 
-  const handleDeleteAccount = () => {
-    const confirmed = window.confirm(
-      'Are you absolutely sure? This will permanently delete your account and ALL data. This cannot be undone.'
-    );
-    if (confirmed) {
-      alert('Account deletion is not yet implemented. Please contact support.');
+  const clearLocalAppData = () => {
+    try {
+      Object.keys(localStorage)
+        .filter(key => key.startsWith('sf_') || key === 'studyflow_data')
+        .forEach(key => localStorage.removeItem(key));
+    } catch { /* storage unavailable */ }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE' || deletingAccount) return;
+    setDeletingAccount(true);
+    setDeleteMsg('');
+    try {
+      // 1. Delete all app data (DynamoDB, S3 files, vectors) while still authenticated.
+      await deleteAccount();
+    } catch (err) {
+      setDeleteMsg(`Could not delete your data: ${err.message || 'unknown error'}. Nothing was removed from your login; please try again.`);
+      setDeletingAccount(false);
+      return;
     }
+
+    // 2. Delete the Cognito user itself.
+    let cognitoError = '';
+    try {
+      const { deleteCurrentUser, deleteUserWithAccessToken } = await import('../utils/auth');
+      if (isOAuthUser) {
+        const accessToken = await getAccessToken();
+        await deleteUserWithAccessToken(accessToken);
+      } else {
+        await deleteCurrentUser();
+      }
+    } catch (err) {
+      cognitoError = err.message || 'unknown error';
+    }
+
+    // 3. Clear local state and sign out either way: the data is already gone.
+    clearLocalAppData();
+    logout();
+    if (cognitoError) {
+      alert(`Your StudyFlow data was deleted, but the login could not be removed (${cognitoError}). Please contact support to finish deleting your sign-in.`);
+    }
+    navigate('/login', { replace: true });
   };
 
   const handleIndexLibrary = async () => {
@@ -746,10 +786,11 @@ const SettingsPage = () => {
             <SettingRow
               label="Delete account"
               sub="Permanently remove your account and all data. Irreversible."
-              last
+              last={!showDeleteConfirm}
               control={
                 <button
-                  onClick={handleDeleteAccount}
+                  onClick={() => { setShowDeleteConfirm(v => !v); setDeleteConfirmText(''); setDeleteMsg(''); }}
+                  disabled={deletingAccount}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
                     height: 34, padding: '0 14px', borderRadius: 8,
@@ -762,6 +803,58 @@ const SettingsPage = () => {
                 </button>
               }
             />
+            {showDeleteConfirm && (
+              <div style={{
+                marginTop: 4, padding: 16, borderRadius: 12,
+                background: 'rgba(255,107,107,0.06)', border: '1px solid rgba(255,107,107,0.3)',
+              }}>
+                <p style={{ fontSize: 13, color: 'var(--text-primary)', margin: '0 0 6px', fontWeight: 600 }}>
+                  This permanently deletes your account
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.5 }}>
+                  All subjects, chapters, documents, uploaded files, notes, chats, study plans and settings will be removed, along with your login. This cannot be undone. Type <strong>DELETE</strong> to confirm.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    value={deleteConfirmText}
+                    onChange={e => setDeleteConfirmText(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleDeleteAccount(); }}
+                    placeholder="DELETE"
+                    disabled={deletingAccount}
+                    aria-label="Type DELETE to confirm account deletion"
+                    className="sf-input"
+                    style={{ flex: 1, minWidth: 140 }}
+                  />
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={deleteConfirmText !== 'DELETE' || deletingAccount}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      height: 38, padding: '0 14px', borderRadius: 8, border: 'none',
+                      background: '#FF6B6B', color: '#fff', fontSize: 12, fontWeight: 600,
+                      cursor: (deleteConfirmText !== 'DELETE' || deletingAccount) ? 'not-allowed' : 'pointer',
+                      opacity: (deleteConfirmText !== 'DELETE' || deletingAccount) ? 0.5 : 1,
+                    }}
+                  >
+                    {deletingAccount
+                      ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />Deleting...</>
+                      : <><Trash2 size={13} />Permanently delete</>}
+                  </button>
+                  <button
+                    onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); setDeleteMsg(''); }}
+                    disabled={deletingAccount}
+                    style={{
+                      height: 38, padding: '0 14px', borderRadius: 8,
+                      border: '1px solid var(--border-light)', background: 'var(--bg-card)',
+                      color: 'var(--text-primary)', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {deleteMsg && <p style={{ fontSize: 12, color: '#FF6B6B', margin: '10px 0 0' }}>{deleteMsg}</p>}
+              </div>
+            )}
           </SettingCard>
 
         </div>

@@ -354,6 +354,12 @@ export async function searchLibrary({ query, topK = 8, docId = null }) {
   });
 }
 
+// ── Account ───────────────────────────────────────────────────────────────────
+
+export async function deleteAccount() {
+  return apiFetch('/api/account', { method: 'DELETE' });
+}
+
 // ── Usage & Stats ─────────────────────────────────────────────────────────────
 
 export async function getUsage() {

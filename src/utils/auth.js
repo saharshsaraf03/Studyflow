@@ -154,6 +154,10 @@ export function confirmForgotPassword(email, code, newPassword) {
 
 const COGNITO_DOMAIN = 'https://ap-south-15qo8gz9cs.auth.ap-south-1.amazoncognito.com';
 const OAUTH_CLIENT_ID = '5e14397oapv9ubug1p2um2c3ie';
+// Account deletion for Google users calls Cognito DeleteUser, which needs the
+// aws.cognito.signin.user.admin scope. Add it here (via env) only after it is
+// enabled on the app client, otherwise the hosted UI rejects the request.
+const OAUTH_SCOPES = import.meta.env.VITE_COGNITO_OAUTH_SCOPES || 'email openid profile';
 
 /**
  * The redirect_uri sent to Cognito: the origin the app is served from.
@@ -177,7 +181,7 @@ export function signInWithGoogle() {
     client_id: OAUTH_CLIENT_ID,
     redirect_uri: getRedirectUri(),
     identity_provider: 'Google',
-    scope: 'email openid profile',
+    scope: OAUTH_SCOPES,
   });
   window.location.href = `${COGNITO_DOMAIN}/oauth2/authorize?${params.toString()}`;
 }
@@ -273,4 +277,45 @@ export async function changePassword(oldPassword, newPassword) {
       });
     });
   });
+}
+
+// ── Delete Account ────────────────────────────────────────────────────────────
+
+/**
+ * Delete the signed-in username/password user from the Cognito user pool.
+ * Call only after the backend has deleted the user's data (DELETE /api/account).
+ */
+export function deleteCurrentUser() {
+  return new Promise((resolve, reject) => {
+    const user = userPool.getCurrentUser();
+    if (!user) return reject(new Error('Not authenticated'));
+    user.getSession((err) => {
+      if (err) return reject(err);
+      user.deleteUser((deleteErr, result) => {
+        if (deleteErr) return reject(deleteErr);
+        resolve(result);
+      });
+    });
+  });
+}
+
+/**
+ * Delete an OAuth (Google / hosted UI) user via Cognito's DeleteUser API.
+ * The access token must include the aws.cognito.signin.user.admin scope,
+ * which the app client has to allow and signInWithGoogle has to request.
+ */
+export async function deleteUserWithAccessToken(accessToken) {
+  if (!accessToken) throw new Error('Missing access token');
+  const response = await fetch('https://cognito-idp.ap-south-1.amazonaws.com/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-amz-json-1.1',
+      'X-Amz-Target': 'AWSCognitoIdentityProviderService.DeleteUser',
+    },
+    body: JSON.stringify({ AccessToken: accessToken }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.message || err.Message || err.__type || `Cognito DeleteUser failed (${response.status})`);
+  }
 }

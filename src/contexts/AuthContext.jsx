@@ -34,6 +34,7 @@ export function AuthProvider({ children }) {
           sub: result.user.sub,
           _oauthTokens: result.tokens,
           _idToken: result.user.idToken,
+          _accessToken: result.user.accessToken || result.tokens.access_token,
           _refreshToken: result.tokens.refresh_token,
         };
         // Persist OAuth session
@@ -98,6 +99,7 @@ export function AuthProvider({ children }) {
       name: oauthResult.user.name,
       sub: oauthResult.user.sub,
       _idToken: oauthResult.user.idToken,
+      _accessToken: oauthResult.user.accessToken || oauthResult.tokens?.access_token,
       _refreshToken: oauthResult.tokens?.refresh_token,
       _expiresAt: Date.now() + (oauthResult.tokens.expires_in * 1000),
     };
@@ -114,31 +116,40 @@ export function AuthProvider({ children }) {
     setIsAuthenticated(false);
   }
 
+  const isOAuthUser = Boolean(user?._idToken || user?._refreshToken);
+
+  // Returns the OAuth user with fresh tokens, refreshing them if they are
+  // expired or about to expire. Returns null if the session can't be refreshed.
+  async function getFreshOAuthUser() {
+    const expiresAt = user._expiresAt || 0;
+    const needsRefresh = !user._idToken || !user._accessToken || Date.now() > expiresAt - 60_000;
+    if (!needsRefresh || !user._refreshToken) return user;
+    try {
+      const tokens = await refreshOAuthToken(user._refreshToken);
+      const refreshedUser = {
+        ...user,
+        _idToken: tokens.id_token,
+        _accessToken: tokens.access_token || user._accessToken,
+        _refreshToken: tokens.refresh_token || user._refreshToken,
+        _expiresAt: Date.now() + (tokens.expires_in * 1000),
+      };
+      setUser(refreshedUser);
+      localStorage.setItem('sf_oauth_user', JSON.stringify(refreshedUser));
+      return refreshedUser;
+    } catch {
+      // Refresh failed — the OAuth session is no longer valid
+      logout();
+      return null;
+    }
+  }
+
   async function getToken() {
     // OAuth user — refresh the id token if it is expired or about to expire
-    if (user?._idToken || user?._refreshToken) {
-      const expiresAt = user._expiresAt || 0;
-      const needsRefresh = !user._idToken || Date.now() > expiresAt - 60_000;
-      if (needsRefresh && user._refreshToken) {
-        try {
-          const tokens = await refreshOAuthToken(user._refreshToken);
-          const refreshedUser = {
-            ...user,
-            _idToken: tokens.id_token,
-            _refreshToken: tokens.refresh_token || user._refreshToken,
-            _expiresAt: Date.now() + (tokens.expires_in * 1000),
-          };
-          setUser(refreshedUser);
-          localStorage.setItem('sf_oauth_user', JSON.stringify(refreshedUser));
-          return tokens.id_token;
-        } catch {
-          // Refresh failed — the OAuth session is no longer valid
-          logout();
-          return null;
-        }
-      }
-      if (user._idToken) return user._idToken;
-      if (user._oauthTokens?.id_token) return user._oauthTokens.id_token;
+    if (isOAuthUser) {
+      const fresh = await getFreshOAuthUser();
+      if (!fresh) return null;
+      if (fresh._idToken) return fresh._idToken;
+      if (fresh._oauthTokens?.id_token) return fresh._oauthTokens.id_token;
     }
 
     // Standard Cognito user
@@ -150,10 +161,25 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // Cognito access token (needed for user-pool APIs such as DeleteUser).
+  async function getAccessToken() {
+    if (isOAuthUser) {
+      const fresh = await getFreshOAuthUser();
+      if (!fresh) return null;
+      return fresh._accessToken || fresh._oauthTokens?.access_token || null;
+    }
+    try {
+      const session = await getCurrentSession();
+      return session.getAccessToken().getJwtToken();
+    } catch {
+      return null;
+    }
+  }
+
   return (
     <AuthContext.Provider value={{
       user, isLoading, isAuthenticated,
-      login, loginWithOAuth, logout, getToken,
+      login, loginWithOAuth, logout, getToken, getAccessToken, isOAuthUser,
     }}>
       {children}
     </AuthContext.Provider>
