@@ -48,27 +48,6 @@ export async function deletePlanner() {
   return apiFetch('/api/planner', { method: 'DELETE' });
 }
 
-// ── Documents ─────────────────────────────────────────────────────────────────
-
-export async function saveDocument({ docId, fileName, extractedText, aiResults }) {
-  return apiFetch('/api/documents/save', {
-    method: 'POST',
-    body: JSON.stringify({ docId, fileName, extractedText, aiResults }),
-  });
-}
-
-export async function listDocuments() {
-  return apiFetch('/api/documents/list');
-}
-
-export async function getDocument(docId) {
-  return apiFetch(`/api/documents/${docId}`);
-}
-
-export async function deleteDocument(docId) {
-  return apiFetch(`/api/documents/${docId}`, { method: 'DELETE' });
-}
-
 // ── Chat History ──────────────────────────────────────────────────────────────
 
 export async function saveChat({ docId, messages }) {
@@ -137,28 +116,6 @@ export async function migrateToCloud(planData) {
   return apiFetch('/api/migrate', {
     method: 'POST',
     body: JSON.stringify({ planData }),
-  });
-}
-
-// ── Notes ─────────────────────────────────────────────────────────────────────
-
-export async function saveNotes({ subjectName, content }) {
-  return apiFetch('/api/notes/save', {
-    method: 'POST',
-    body: JSON.stringify({ subjectName, content }),
-  });
-}
-
-export async function loadNotes() {
-  return apiFetch('/api/notes/load');
-}
-
-// ── Explain ───────────────────────────────────────────────────────────────────
-
-export async function explainText({ selectedText, context }) {
-  return apiFetch('/api/explain', {
-    method: 'POST',
-    body: JSON.stringify({ selectedText, context }),
   });
 }
 

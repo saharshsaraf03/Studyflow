@@ -425,13 +425,6 @@ class SavePlannerRequest(BaseModel):
     planData: Any  # Can be dict or list
 
 
-class SaveDocumentRequest(BaseModel):
-    docId: str
-    fileName: str
-    extractedText: str
-    aiResults: Optional[dict] = None
-
-
 class SaveChatRequest(BaseModel):
     docId: Optional[str] = None
     messages: List[dict]
@@ -880,63 +873,6 @@ async def delete_planner(request: Request, user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Document Endpoints ─────────────────────────────────────────────────────────
-
-@app.post("/api/documents/save")
-async def save_document(
-    request: Request,
-    body: SaveDocumentRequest,
-    user=Depends(get_current_user)
-):
-    try:
-        db_put(
-            pk=f"USER#{user['sub']}",
-            sk=f"DOC#{body.docId}",
-            data={
-                "docId": body.docId,
-                "fileName": body.fileName,
-                "extractedText": body.extractedText,
-                "aiResults": body.aiResults or {},
-            }
-        )
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/documents/list")
-async def list_documents(request: Request, user=Depends(get_current_user)):
-    items = db_query(pk=f"USER#{user['sub']}", sk_prefix="DOC#")
-    docs = [
-        {
-            "docId": item.get("docId"),
-            "fileName": item.get("fileName"),
-            "updatedAt": item.get("updatedAt"),
-            "hasAiResults": bool(item.get("aiResults")),
-        }
-        for item in items
-    ]
-    return {"success": True, "documents": docs}
-
-
-@app.get("/api/documents/{doc_id}")
-async def get_document(request: Request, doc_id: str, user=Depends(get_current_user)):
-    item = db_get(pk=f"USER#{user['sub']}", sk=f"DOC#{doc_id}")
-    if not item:
-        raise HTTPException(status_code=404, detail="Document not found")
-    return {"success": True, "document": item}
-
-
-@app.delete("/api/documents/{doc_id}")
-async def delete_document(request: Request, doc_id: str, user=Depends(get_current_user)):
-    try:
-        db_delete(pk=f"USER#{user['sub']}", sk=f"DOC#{doc_id}")
-        db_delete(pk=f"USER#{user['sub']}", sk=f"CHAT#DOC#{doc_id}")
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ── Chat History Endpoints ─────────────────────────────────────────────────────
 
 @app.post("/api/chat/save")
@@ -981,89 +917,6 @@ async def migrate_from_localstorage(
         if body.planData:
             db_put(pk=f"USER#{user['sub']}", sk="PLANNER", data={"planData": body.planData})
         return {"success": True, "migrated": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
-# ── Notes Endpoints ────────────────────────────────────────────────────────────
-
-class SaveNotesRequest(BaseModel):
-    subjectName: str
-    content: str
-
-
-@app.post("/api/notes/save")
-async def save_notes(
-    request: Request,
-    body: SaveNotesRequest,
-    user=Depends(get_current_user)
-):
-    try:
-        safe_name = body.subjectName.strip().replace("#", "").replace(" ", "_")
-        db_put(
-            pk=f"USER#{user['sub']}",
-            sk=f"NOTE#SUBJECT#{safe_name}",
-            data={"subjectName": body.subjectName, "content": body.content}
-        )
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/notes/load")
-async def load_notes(
-    request: Request,
-    user=Depends(get_current_user)
-):
-    try:
-        items = db_query(pk=f"USER#{user['sub']}", sk_prefix="NOTE#SUBJECT#")
-        notes = {}
-        for item in items:
-            notes[item.get("subjectName", "")] = item.get("content", "")
-        return {"success": True, "notes": notes}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ── Explain Endpoint ───────────────────────────────────────────────────────────
-
-@app.post("/api/explain")
-async def explain_text(
-    request: Request,
-    user=Depends(get_current_user)
-):
-    try:
-        body = await request.json()
-        selected_text = body.get("selectedText", "").strip()
-        context = body.get("context", "").strip()
-
-        if not selected_text or len(selected_text) < 3:
-            raise HTTPException(status_code=400, detail="Selected text too short")
-
-        client = get_openai_client()
-        prompt = f"""A student is reading study material and selected this text:
-
-"{selected_text}"
-
-Surrounding context:
-{context[:800] if context else "Not provided"}
-
-Give a clear, concise explanation in 3-5 sentences. Focus on clarity for a student.
-If it contains a formula, explain each variable. If it's a concept, give a simple analogy."""
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.3,
-            max_tokens=300,
-            messages=[
-                {"role": "system", "content": "You are a helpful study assistant that explains academic concepts clearly and concisely."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return {"success": True, "explanation": response.choices[0].message.content}
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
