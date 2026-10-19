@@ -115,31 +115,10 @@ function LeftPanel() {
         </div>
       </div>
 
-      {/* Bottom social proof */}
+      {/* Footer tagline */}
       <div className="relative z-10 flex items-center gap-3">
-        {/* Overlapping circles */}
-        <div className="flex items-center">
-          {[
-            { bg: '#6C5CE7', letter: 'A' },
-            { bg: '#00D2A0', letter: 'B' },
-            { bg: '#FECA57', letter: 'C' },
-          ].map((c, i) => (
-            <div
-              key={i}
-              className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold text-white"
-              style={{
-                background: c.bg,
-                marginLeft: i === 0 ? '0' : '-8px',
-                zIndex: 3 - i,
-                position: 'relative',
-              }}
-            >
-              {c.letter}
-            </div>
-          ))}
-        </div>
         <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>
-          50,000+ students are already studying smarter.
+          Built for students, by a student.
         </p>
       </div>
     </div>
