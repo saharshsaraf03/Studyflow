@@ -3,6 +3,7 @@ import SubjectPanel from '../components/library/SubjectPanel';
 import SubjectContent from '../components/library/SubjectContent';
 import GlobalChatbot from '../components/library/GlobalChatbot';
 import ChapterContent from '../components/library/ChapterContent';
+import LibrarySearch from '../components/library/LibrarySearch';
 import { listSubjects, listChapters, saveSubject, saveChapter, deleteSubject, deleteChapter } from '../utils/api';
 
 /**
@@ -142,6 +143,21 @@ const LibraryPage = () => {
     if (selectedChapterId === chapterId) setSelectedChapterId(null);
   }, [selectedChapterId]);
 
+  // Jump to the subject/chapter that holds a semantic search result.
+  const handleSearchResultSelect = useCallback(async (result) => {
+    if (!result) return;
+    if (result.chapterId) {
+      const subjectId = result.subjectId
+        || chapters.find(c => c.chapterId === result.chapterId)?.subjectId;
+      if (!subjectId) return;
+      setSelectedSubjectId(subjectId);
+      await loadChaptersForSubject(subjectId);
+      setSelectedChapterId(result.chapterId);
+    } else if (result.subjectId) {
+      await handleSelectSubjectLevel(result.subjectId);
+    }
+  }, [chapters, loadChaptersForSubject, handleSelectSubjectLevel]);
+
   // Derive current subject/chapter objects
   const selectedSubject = subjects.find(s => s.subjectId === selectedSubjectId) || null;
   const selectedChapter = chapters.find(c => c.chapterId === selectedChapterId) || null;
@@ -169,16 +185,19 @@ const LibraryPage = () => {
         onDeleteSubject={handleDeleteSubject}
         onDeleteChapter={handleDeleteChapter}
       />
-      {selectedChapterId ? (
-        <ChapterContent
-          subject={selectedSubject}
-          chapter={selectedChapter}
-          chapterIndex={chapterIndex >= 0 ? chapterIndex : 0}
-          onDocCountChange={handleChapterDocCountChange}
-        />
-      ) : (
-        <SubjectContent subject={selectedSubject} onDocCountChange={handleChapterDocCountChange} />
-      )}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <LibrarySearch onSelectResult={handleSearchResultSelect} />
+        {selectedChapterId ? (
+          <ChapterContent
+            subject={selectedSubject}
+            chapter={selectedChapter}
+            chapterIndex={chapterIndex >= 0 ? chapterIndex : 0}
+            onDocCountChange={handleChapterDocCountChange}
+          />
+        ) : (
+          <SubjectContent subject={selectedSubject} onDocCountChange={handleChapterDocCountChange} />
+        )}
+      </div>
     </div>
 
     <GlobalChatbot />

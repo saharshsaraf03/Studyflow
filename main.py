@@ -2304,6 +2304,9 @@ async def semantic_search(
                     results.append({
                         "fileName": m.get("fileName", "Unknown"),
                         "docId": m.get("docId"),
+                        "subjectId": m.get("subjectId"),
+                        "chapterId": m.get("chapterId"),
+                        "locationType": m.get("locationType"),
                         "chunkIndex": m.get("chunkIndex"),
                         "snippet": (m.get("text", "") or "")[:400],
                         "score": round(1.0 - float(distance), 4) if distance is not None else None,
@@ -2311,6 +2314,10 @@ async def semantic_search(
                 return {"success": True, "results": results, "retrieval": "vector"}
 
         # Fallback: cached in-memory cosine over stored document text.
+        # Location fields come from the DynamoDB items: SDOC items carry
+        # subjectId; CDOC items carry chapterId and the subject is derived from
+        # the chapter (cached per chapter so each chapter is looked up once).
+        chapter_subjects: dict = {}
         docs = []
         for prefix in ("SDOC#", "CDOC#"):
             for item in db_query(pk=pk, sk_prefix=prefix):
@@ -2318,10 +2325,26 @@ async def semantic_search(
                     continue
                 text = item.get("extractedText", "")
                 if text and len(text) > 50:
+                    if prefix == "SDOC#":
+                        location = {
+                            "subjectId": item.get("subjectId"),
+                            "chapterId": None,
+                            "locationType": "subject",
+                        }
+                    else:
+                        chapter_id = item.get("chapterId")
+                        if chapter_id not in chapter_subjects:
+                            chapter_subjects[chapter_id] = find_subject_for_chapter(pk, chapter_id)
+                        location = {
+                            "subjectId": chapter_subjects[chapter_id],
+                            "chapterId": chapter_id,
+                            "locationType": "chapter",
+                        }
                     docs.append({
                         "docId": item.get("docId", "unknown"),
                         "fileName": item.get("fileName", "Unknown"),
                         "text": text[:12000],
+                        **location,
                     })
         if not docs:
             return {"success": True, "results": [], "retrieval": "legacy"}
@@ -2338,6 +2361,9 @@ async def semantic_search(
                 scored.append({
                     "fileName": d["fileName"],
                     "docId": d["docId"],
+                    "subjectId": d["subjectId"],
+                    "chapterId": d["chapterId"],
+                    "locationType": d["locationType"],
                     "chunkIndex": int(idx),
                     "snippet": chunks[int(idx)][:400],
                     "score": round(float(sims[int(idx)]), 4),

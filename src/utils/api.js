@@ -24,7 +24,9 @@ async function apiFetch(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || body.error || `Server error (${response.status})`);
+    const error = new Error(body.detail || body.error || `Server error (${response.status})`);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }
@@ -340,6 +342,15 @@ export async function uploadPdfToS3({ file, docId }) {
       docId,
       contentType: file.type || 'application/octet-stream',
     }),
+  });
+}
+
+// ── Semantic Search ───────────────────────────────────────────────────────────
+
+export async function searchLibrary({ query, topK = 8, docId = null }) {
+  return apiFetch('/api/search', {
+    method: 'POST',
+    body: JSON.stringify({ query, topK, docId }),
   });
 }
 
