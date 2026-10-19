@@ -16,7 +16,7 @@ from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from openai import OpenAI
 import jwt
@@ -2514,6 +2514,51 @@ async def export_all_data(
             "userEmail": user.get("email", ""),
             "data": export_data,
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Profile & Settings ────────────────────────────────────────────────────────
+
+class ProfilePreferences(BaseModel):
+    emailNotifs: bool = True
+    pushNotifs: bool = False
+    aiTips: bool = True
+    soundEffects: bool = False
+
+
+class StudyDefaults(BaseModel):
+    weekdayHours: float = Field(3, ge=0.5, le=16)
+    weekendHours: float = Field(4, ge=0.5, le=16)
+    sessionLength: int = Field(45, ge=5, le=240)
+
+
+class ProfileRequest(BaseModel):
+    name: str = Field("", max_length=120)
+    university: str = Field("", max_length=200)
+    fieldOfStudy: str = Field("", max_length=200)
+    preferences: ProfilePreferences = Field(default_factory=ProfilePreferences)
+    studyDefaults: StudyDefaults = Field(default_factory=StudyDefaults)
+
+
+@app.get("/api/profile")
+async def load_profile(request: Request, user=Depends(get_current_user)):
+    item = db_get(pk=f"USER#{user['sub']}", sk="PROFILE")
+    if not item:
+        return {"success": True, "profile": None}
+    profile = strip_dynamo_keys(item)
+    return {"success": True, "profile": profile, "updatedAt": item.get("updatedAt")}
+
+
+@app.post("/api/profile")
+async def save_profile(request: Request, body: ProfileRequest, user=Depends(get_current_user)):
+    try:
+        data = body.model_dump()
+        data["name"] = data["name"].strip()
+        data["university"] = data["university"].strip()
+        data["fieldOfStudy"] = data["fieldOfStudy"].strip()
+        db_put(pk=f"USER#{user['sub']}", sk="PROFILE", data=data)
+        return {"success": True, "profile": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

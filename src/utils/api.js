@@ -354,6 +354,19 @@ export async function searchLibrary({ query, topK = 8, docId = null }) {
   });
 }
 
+// ── Profile & Settings ────────────────────────────────────────────────────────
+
+export async function loadProfile() {
+  return apiFetch('/api/profile');
+}
+
+export async function saveProfile(profile) {
+  return apiFetch('/api/profile', {
+    method: 'POST',
+    body: JSON.stringify(profile),
+  });
+}
+
 // ── Account ───────────────────────────────────────────────────────────────────
 
 export async function deleteAccount() {
