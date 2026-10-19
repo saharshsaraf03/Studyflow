@@ -25,6 +25,8 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
   const [analyzingDocId, setAnalyzingDocId] = useState(null);
   const [analysisPanelDoc, setAnalysisPanelDoc] = useState(null);
   const [analysisPanelResults, setAnalysisPanelResults] = useState(null);
+  const [analysisPanelTab, setAnalysisPanelTab] = useState('plan');
+  const [analysisPanelOpenId, setAnalysisPanelOpenId] = useState(0); // remounts the panel on each explicit open
   const [viewerDoc, setViewerDoc] = useState(null);
   const [viewerFile, setViewerFile] = useState(null);
   const [viewerPdfUrl, setViewerPdfUrl] = useState(null);
@@ -87,13 +89,16 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
     setShowUpload(false);
   }, [chapter]);
 
-  const handleAnalyze = useCallback(async (doc) => {
+  // keepPanelTab: true when triggered from inside an already-open AnalysisPanel,
+  // so the panel stays on the tab the user is looking at.
+  const handleAnalyze = useCallback(async (doc, { keepPanelTab = false } = {}) => {
     setAnalyzingDocId(doc.docId);
     try {
       const result = await analyzeCDoc({ docId: doc.docId, chapterId: chapter.chapterId });
       const full = await getCDoc(chapter.chapterId, doc.docId).catch(() => null);
       const fullDoc = full?.doc || doc;
       setDocs(prev => prev.map(d => d.docId === doc.docId ? { ...d, hasAiResults: true } : d));
+      if (!keepPanelTab) { setAnalysisPanelTab('plan'); setAnalysisPanelOpenId(n => n + 1); }
       setAnalysisPanelDoc({ ...fullDoc, hasAiResults: true });
       setAnalysisPanelResults(result.aiResults);
     } catch (err) {
@@ -132,38 +137,37 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
       setViewerPdfUrl(null);
       return;
     }
-    // Use pdfUrl from S3 — open directly in new tab
-    if (doc.pdfUrl) {
-      if (!isPdf) {
-        window.open(doc.pdfUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-      setViewerDoc(doc);
-      setViewerFile(null);
-      setViewerPdfUrl(doc.pdfUrl);
-      return;
-    }
-    // Fall back to full fetch
+    // Always fetch the doc so we get a freshly presigned pdfUrl: presigned S3
+    // URLs expire after an hour, so the one from the list call may be stale.
+    // Non-PDF files open in a new tab, which is created now (inside the click)
+    // so popup blockers allow it, then pointed at the fresh URL.
+    const newTab = isPdf ? null : window.open('', '_blank');
+    if (newTab) newTab.opener = null;
     try {
       const result = await getCDoc(chapter.chapterId, doc.docId);
       const fullDoc = result.doc || doc;
       if (fullDoc.pdfUrl) {
-        if (!fullDoc.fileName?.toLowerCase().endsWith('.pdf')) {
-          window.open(fullDoc.pdfUrl, '_blank', 'noopener,noreferrer');
+        if (!isPdf) {
+          if (newTab) newTab.location.href = fullDoc.pdfUrl;
+          else window.open(fullDoc.pdfUrl, '_blank', 'noopener,noreferrer');
           return;
         }
         setViewerDoc(fullDoc);
         setViewerFile(null);
         setViewerPdfUrl(fullDoc.pdfUrl);
       } else {
+        if (newTab) newTab.close();
         alert('No PDF available for this document. Please re-upload it.');
       }
     } catch {
+      if (newTab) newTab.close();
       alert('Failed to open document.');
     }
   }, [chapter]);
 
   const handleViewSummary = useCallback(async (doc) => {
+    setAnalysisPanelTab('plan');
+    setAnalysisPanelOpenId(n => n + 1);
     try {
       const result = await getCDoc(chapter.chapterId, doc.docId);
       const fullDoc = result.doc || doc;
@@ -172,6 +176,21 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
     } catch {
       setAnalysisPanelDoc(doc);
       setAnalysisPanelResults(null);
+    }
+  }, [chapter]);
+
+  // Open the panel straight on the Chat tab. Works whether or not the document
+  // has been analyzed; the full doc fetch includes extractedText for chat/quiz.
+  const handleChat = useCallback(async (doc) => {
+    try {
+      const result = await getCDoc(chapter.chapterId, doc.docId);
+      const fullDoc = result.doc || doc;
+      setAnalysisPanelTab('chat');
+      setAnalysisPanelOpenId(n => n + 1);
+      setAnalysisPanelDoc(fullDoc);
+      setAnalysisPanelResults(fullDoc.aiResults || null);
+    } catch (err) {
+      alert(`Could not open chat: ${err.message}`);
     }
   }, [chapter]);
 
@@ -307,6 +326,7 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
                   onDelete={handleDelete}
                   onView={handleViewDoc}
                   onViewSummary={handleViewSummary}
+                  onChat={handleChat}
                   onMove={handleMove}
                   onRetryIndex={handleRetryIndex}
                 />
@@ -381,10 +401,14 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
       )}
 
       {/* Analysis panel */}
-      {analysisPanelDoc && analysisPanelResults && (
+      {analysisPanelDoc && (
         <AnalysisPanel
+          key={`${analysisPanelDoc.docId}-${analysisPanelOpenId}`}
           doc={analysisPanelDoc}
           aiResults={analysisPanelResults}
+          initialTab={analysisPanelTab}
+          onAnalyze={() => handleAnalyze(analysisPanelDoc, { keepPanelTab: true })}
+          isAnalyzing={analyzingDocId === analysisPanelDoc.docId}
           extractedText={analysisPanelDoc.extractedText || ''}
           sourceType="chapter"
           sourceId={chapter.chapterId}

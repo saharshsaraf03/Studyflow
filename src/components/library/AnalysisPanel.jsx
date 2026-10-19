@@ -15,8 +15,11 @@ const SUGGESTED = [
   'Give me practice questions',
 ];
 
-const AnalysisPanel = ({ doc, aiResults, extractedText, sourceType, sourceId, onClose }) => {
-  const [activeTab, setActiveTab] = useState('plan');
+const AnalysisPanel = ({
+  doc, aiResults, extractedText, sourceType, sourceId, onClose,
+  initialTab = 'plan', onAnalyze, isAnalyzing = false,
+}) => {
+  const [activeTab, setActiveTab] = useState(initialTab || 'plan');
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -76,6 +79,36 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, sourceType, sourceId, on
 
   const studyPlan = aiResults?.studyPlan || null;
   const examSummary = aiResults?.examSummary || null;
+
+  // Shown on the Study Plan / Exam Summary tabs when the document has not been
+  // analyzed yet, so the panel is usable for chat and quizzes before analysis.
+  const renderNotAnalyzed = (label) => (
+    <div style={{
+      padding: 24, borderRadius: 12, border: '1px dashed var(--border-light)',
+      background: 'var(--bg-card)', textAlign: 'center',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+    }}>
+      <Sparkles size={28} style={{ color: '#6C5CE7' }} />
+      <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+        No {label} yet
+      </p>
+      <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0, maxWidth: 320 }}>
+        Analyze this document to generate a study plan and an exam-ready summary.
+      </p>
+      {onAnalyze && (
+        <button
+          onClick={onAnalyze}
+          disabled={isAnalyzing}
+          className="btn-primary"
+          style={{ height: 34, padding: '0 14px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: isAnalyzing ? 0.6 : 1 }}
+        >
+          {isAnalyzing
+            ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Analyzing...</>
+            : <><Sparkles size={13} /> Analyze with AI</>}
+        </button>
+      )}
+    </div>
+  );
   const handleGenerateQuiz = useCallback(async () => {
     if (!extractedText || quizLoading) return;
     setQuizLoading(true);
@@ -129,7 +162,7 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, sourceType, sourceId, on
           <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1D2E', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {doc?.fileName}
           </div>
-          <div style={{ fontSize: 11, color: '#9CA3AF' }}>AI Analysis</div>
+          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{studyPlan || examSummary ? 'AI Analysis' : 'Chat, quiz & analysis'}</div>
         </div>
         <button onClick={onClose} style={{
           width: 28, height: 28, borderRadius: 7, background: 'var(--bg-primary)',
@@ -158,8 +191,8 @@ const AnalysisPanel = ({ doc, aiResults, extractedText, sourceType, sourceId, on
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: activeTab === 'chat' ? 0 : 16, display: 'flex', flexDirection: 'column' }}>
-        {activeTab === 'plan' && <StudyPlanView studyPlan={studyPlan} />}
-        {activeTab === 'summary' && <ExamSummaryView examSummary={examSummary} />}
+        {activeTab === 'plan' && (studyPlan ? <StudyPlanView studyPlan={studyPlan} /> : renderNotAnalyzed('study plan'))}
+        {activeTab === 'summary' && (examSummary ? <ExamSummaryView examSummary={examSummary} /> : renderNotAnalyzed('exam summary'))}
         {activeTab === 'quiz' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

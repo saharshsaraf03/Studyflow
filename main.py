@@ -16,7 +16,7 @@ from botocore.exceptions import ClientError
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from openai import OpenAI
 import jwt
@@ -93,8 +93,10 @@ def create_s3_presigned_url(key: str, expires_in: int = 3600) -> str:
             Params={"Bucket": S3_BUCKET, "Key": key},
             ExpiresIn=expires_in,
         )
-    except Exception:
-        return f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{key}"
+    except Exception as e:
+        # Never fall back to a public object URL: the bucket is private.
+        print(f"create_s3_presigned_url failed for {key}: {e}")
+        return ""
 
 
 def delete_s3_object(key: Optional[str]):
@@ -425,13 +427,6 @@ class SavePlannerRequest(BaseModel):
     planData: Any  # Can be dict or list
 
 
-class SaveDocumentRequest(BaseModel):
-    docId: str
-    fileName: str
-    extractedText: str
-    aiResults: Optional[dict] = None
-
-
 class SaveChatRequest(BaseModel):
     docId: Optional[str] = None
     messages: List[dict]
@@ -630,6 +625,74 @@ def legacy_context_for_document(client: OpenAI, extracted_text: str, query: str,
     return retrieve_relevant_chunks(client, chunks, chunk_embeddings, query=query, k=k)
 
 
+# Study plan + exam summary for library documents. Like notes and quizzes, this
+# always reads the full (bounded) document text rather than a top-k vector slice,
+# because an exhaustive summary needs every section, not just the chunks that
+# match one fixed query.
+DOC_ANALYSIS_SYSTEM_PROMPT = (
+    "You are an expert academic study planner and exam coach. "
+    + DOC_ADAPTIVE_PREAMBLE + " " + GROUNDING_RULES + """
+
+Given the material, produce:
+
+1. A STRUCTURED STUDY PLAN - break the content into topics with estimated hours, priority levels, and study order. Cover every major topic in the material, in its logical order.
+2. An EXAM-READY SUMMARY - exhaustive coverage of every concept, definition, formula, theorem, and example. Be thorough - a student should be able to study entirely from this summary. Reproduce formulas and definitions exactly as written, and preserve important numbers, units, conditions, and edge cases.
+
+Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
+{
+  "studyPlan": {
+    "title": "Subject name",
+    "totalEstimatedHours": 10,
+    "topics": [
+      {
+        "name": "Topic name",
+        "estimatedHours": 2,
+        "priority": "high",
+        "keyPoints": ["point1", "point2"],
+        "order": 1
+      }
+    ]
+  },
+  "examSummary": {
+    "title": "Subject name",
+    "sections": [
+      {
+        "heading": "Section heading",
+        "content": "Detailed content with concepts, definitions, formulas.",
+        "keyTerms": ["term1", "term2"],
+        "importantFormulas": ["formula1"],
+        "examTips": ["tip1"]
+      }
+    ]
+  }
+}"""
+)
+
+
+def analyze_document_text(client: OpenAI, extracted_text: str, file_name: str) -> dict:
+    """Generate the studyPlan/examSummary JSON from a document's full text."""
+    text = (extracted_text or "").strip()
+    context = text[:ANALYSIS_CONTEXT_CHARS]
+    user_prompt = f'Study material from "{file_name or "document"}":\n\n'
+    if len(text) > ANALYSIS_CONTEXT_CHARS:
+        user_prompt = (
+            "NOTE: The material is long and has been truncated; cover the portion "
+            "provided as completely as possible.\n\n" + user_prompt
+        )
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.3,
+        max_tokens=8000,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": DOC_ANALYSIS_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt + context},
+        ],
+    )
+    raw = response.choices[0].message.content
+    return parse_json_response(raw) or {"raw": raw}
+
+
 # ── RAG Route (v1 compatible path, now using OpenAI embeddings) ────────────────
 
 @app.post("/")
@@ -812,63 +875,6 @@ async def delete_planner(request: Request, user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Document Endpoints ─────────────────────────────────────────────────────────
-
-@app.post("/api/documents/save")
-async def save_document(
-    request: Request,
-    body: SaveDocumentRequest,
-    user=Depends(get_current_user)
-):
-    try:
-        db_put(
-            pk=f"USER#{user['sub']}",
-            sk=f"DOC#{body.docId}",
-            data={
-                "docId": body.docId,
-                "fileName": body.fileName,
-                "extractedText": body.extractedText,
-                "aiResults": body.aiResults or {},
-            }
-        )
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/documents/list")
-async def list_documents(request: Request, user=Depends(get_current_user)):
-    items = db_query(pk=f"USER#{user['sub']}", sk_prefix="DOC#")
-    docs = [
-        {
-            "docId": item.get("docId"),
-            "fileName": item.get("fileName"),
-            "updatedAt": item.get("updatedAt"),
-            "hasAiResults": bool(item.get("aiResults")),
-        }
-        for item in items
-    ]
-    return {"success": True, "documents": docs}
-
-
-@app.get("/api/documents/{doc_id}")
-async def get_document(request: Request, doc_id: str, user=Depends(get_current_user)):
-    item = db_get(pk=f"USER#{user['sub']}", sk=f"DOC#{doc_id}")
-    if not item:
-        raise HTTPException(status_code=404, detail="Document not found")
-    return {"success": True, "document": item}
-
-
-@app.delete("/api/documents/{doc_id}")
-async def delete_document(request: Request, doc_id: str, user=Depends(get_current_user)):
-    try:
-        db_delete(pk=f"USER#{user['sub']}", sk=f"DOC#{doc_id}")
-        db_delete(pk=f"USER#{user['sub']}", sk=f"CHAT#DOC#{doc_id}")
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ── Chat History Endpoints ─────────────────────────────────────────────────────
 
 @app.post("/api/chat/save")
@@ -913,89 +919,6 @@ async def migrate_from_localstorage(
         if body.planData:
             db_put(pk=f"USER#{user['sub']}", sk="PLANNER", data={"planData": body.planData})
         return {"success": True, "migrated": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
-# ── Notes Endpoints ────────────────────────────────────────────────────────────
-
-class SaveNotesRequest(BaseModel):
-    subjectName: str
-    content: str
-
-
-@app.post("/api/notes/save")
-async def save_notes(
-    request: Request,
-    body: SaveNotesRequest,
-    user=Depends(get_current_user)
-):
-    try:
-        safe_name = body.subjectName.strip().replace("#", "").replace(" ", "_")
-        db_put(
-            pk=f"USER#{user['sub']}",
-            sk=f"NOTE#SUBJECT#{safe_name}",
-            data={"subjectName": body.subjectName, "content": body.content}
-        )
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/notes/load")
-async def load_notes(
-    request: Request,
-    user=Depends(get_current_user)
-):
-    try:
-        items = db_query(pk=f"USER#{user['sub']}", sk_prefix="NOTE#SUBJECT#")
-        notes = {}
-        for item in items:
-            notes[item.get("subjectName", "")] = item.get("content", "")
-        return {"success": True, "notes": notes}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ── Explain Endpoint ───────────────────────────────────────────────────────────
-
-@app.post("/api/explain")
-async def explain_text(
-    request: Request,
-    user=Depends(get_current_user)
-):
-    try:
-        body = await request.json()
-        selected_text = body.get("selectedText", "").strip()
-        context = body.get("context", "").strip()
-
-        if not selected_text or len(selected_text) < 3:
-            raise HTTPException(status_code=400, detail="Selected text too short")
-
-        client = get_openai_client()
-        prompt = f"""A student is reading study material and selected this text:
-
-"{selected_text}"
-
-Surrounding context:
-{context[:800] if context else "Not provided"}
-
-Give a clear, concise explanation in 3-5 sentences. Focus on clarity for a student.
-If it contains a formula, explain each variable. If it's a concept, give a simple analogy."""
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.3,
-            max_tokens=300,
-            messages=[
-                {"role": "system", "content": "You are a helpful study assistant that explains academic concepts clearly and concisely."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        return {"success": True, "explanation": response.choices[0].message.content}
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1344,47 +1267,12 @@ async def analyze_cdoc(
         if not extracted_text or len(extracted_text) < 10:
             raise HTTPException(status_code=400, detail="Document has no extractable text")
 
-        client = get_openai_client()
-        matches = []
-        if vector_store.should_query() and item.get("embeddingStatus") == "ready":
-            matches = vector_store.query_document_chunks(
-                client, user_id=user["sub"], doc_id=body.docId,
-                question="main topics chapters concepts definitions formulas", top_k=8
-            )
-        context = format_vector_context(matches) if matches else extracted_text[:ANALYSIS_CONTEXT_CHARS]
-
-        system_prompt = """You are an expert academic study planner. Given study material, produce:
-1. A STRUCTURED STUDY PLAN
-2. An EXAM-READY SUMMARY
-
-Respond ONLY with valid JSON (no markdown, no backticks):
-{
-  "studyPlan": {
-    "title": "Subject name",
-    "totalEstimatedHours": 10,
-    "topics": [{"name":"","estimatedHours":2,"priority":"high","keyPoints":[],"order":1}]
-  },
-  "examSummary": {
-    "title": "Subject name",
-    "sections": [{"heading":"","content":"","keyTerms":[],"importantFormulas":[],"examTips":[]}]
-  }
-}"""
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.3,
-            max_tokens=8000,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Study material:\n\n{context}"}
-            ]
+        ai_results = analyze_document_text(
+            get_openai_client(), extracted_text, item.get("fileName", "document")
         )
-        raw = response.choices[0].message.content
-        ai_results = parse_json_response(raw) or {"raw": raw}
 
         db_put(pk=pk, sk=f"CDOC#{body.chapterId}#{body.docId}", data={**strip_dynamo_keys(item), "aiResults": ai_results})
-        return {"success": True, "aiResults": ai_results, "retrieval": "vector" if matches else "legacy"}
+        return {"success": True, "aiResults": ai_results, "retrieval": "full"}
     except HTTPException:
         raise
     except Exception as e:
@@ -1554,31 +1442,11 @@ async def analyze_sdoc(
         extracted_text = item.get("extractedText", "")
         if not extracted_text or len(extracted_text) < 10:
             raise HTTPException(status_code=400, detail="Document has no extractable text")
-        client = get_openai_client()
-        matches = []
-        if vector_store.should_query() and item.get("embeddingStatus") == "ready":
-            matches = vector_store.query_document_chunks(
-                client, user_id=user["sub"], doc_id=doc_id,
-                question="main topics chapters concepts definitions formulas", top_k=8
-            )
-        context = format_vector_context(matches) if matches else extracted_text[:ANALYSIS_CONTEXT_CHARS]
-        system_prompt = """You are an expert academic study planner. Respond ONLY with valid JSON (no markdown):
-{
-  "studyPlan": {"title":"","totalEstimatedHours":10,"topics":[{"name":"","estimatedHours":2,"priority":"high","keyPoints":[],"order":1}]},
-  "examSummary": {"title":"","sections":[{"heading":"","content":"","keyTerms":[],"importantFormulas":[],"examTips":[]}]}
-}"""
-        response = client.chat.completions.create(
-            model="gpt-4o-mini", temperature=0.3, max_tokens=8000,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Study material:\n\n{context}"}
-            ]
+        ai_results = analyze_document_text(
+            get_openai_client(), extracted_text, item.get("fileName", "document")
         )
-        raw = response.choices[0].message.content
-        ai_results = parse_json_response(raw) or {"raw": raw}
         db_put(pk=pk, sk=f"SDOC#{subject_id}#{doc_id}", data={**strip_dynamo_keys(item), "aiResults": ai_results})
-        return {"success": True, "aiResults": ai_results, "retrieval": "vector" if matches else "legacy"}
+        return {"success": True, "aiResults": ai_results, "retrieval": "full"}
     except HTTPException:
         raise
     except Exception as e:
@@ -1936,13 +1804,23 @@ async def migrate_vectors(
                 item,
             ))
 
+        def needs_indexing(item: dict) -> bool:
+            # Re-index anything not ready, edited since indexing, or embedded
+            # under an older EMBEDDING_VERSION (e.g. v1 text-embedding-3-small
+            # vectors, which v2 queries never match).
+            return not (
+                item.get("embeddingStatus") == "ready"
+                and item.get("contentHash") == vector_store.content_hash(item.get("extractedText", ""))
+                and int(item.get("embeddingVersion") or 0) == vector_store.EMBEDDING_VERSION
+            )
+
+        pending = [c for c in candidates if needs_indexing(c[4])]
+
         processed = []
         failed = []
-        for location_type, subject_id, chapter_id, sk, item in candidates:
+        for location_type, subject_id, chapter_id, sk, item in pending:
             if len(processed) >= limit:
                 break
-            if item.get("embeddingStatus") == "ready" and item.get("contentHash") == vector_store.content_hash(item.get("extractedText", "")):
-                continue
             status = index_document_item(
                 pk,
                 user["sub"],
@@ -1962,7 +1840,7 @@ async def migrate_vectors(
             "processed": processed,
             "failed": failed,
             "limit": limit,
-            "remainingHint": max(len(candidates) - len(processed), 0),
+            "remainingHint": max(len(pending) - len(processed), 0),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2291,6 +2169,9 @@ async def semantic_search(
                     results.append({
                         "fileName": m.get("fileName", "Unknown"),
                         "docId": m.get("docId"),
+                        "subjectId": m.get("subjectId"),
+                        "chapterId": m.get("chapterId"),
+                        "locationType": m.get("locationType"),
                         "chunkIndex": m.get("chunkIndex"),
                         "snippet": (m.get("text", "") or "")[:400],
                         "score": round(1.0 - float(distance), 4) if distance is not None else None,
@@ -2298,6 +2179,10 @@ async def semantic_search(
                 return {"success": True, "results": results, "retrieval": "vector"}
 
         # Fallback: cached in-memory cosine over stored document text.
+        # Location fields come from the DynamoDB items: SDOC items carry
+        # subjectId; CDOC items carry chapterId and the subject is derived from
+        # the chapter (cached per chapter so each chapter is looked up once).
+        chapter_subjects: dict = {}
         docs = []
         for prefix in ("SDOC#", "CDOC#"):
             for item in db_query(pk=pk, sk_prefix=prefix):
@@ -2305,10 +2190,26 @@ async def semantic_search(
                     continue
                 text = item.get("extractedText", "")
                 if text and len(text) > 50:
+                    if prefix == "SDOC#":
+                        location = {
+                            "subjectId": item.get("subjectId"),
+                            "chapterId": None,
+                            "locationType": "subject",
+                        }
+                    else:
+                        chapter_id = item.get("chapterId")
+                        if chapter_id not in chapter_subjects:
+                            chapter_subjects[chapter_id] = find_subject_for_chapter(pk, chapter_id)
+                        location = {
+                            "subjectId": chapter_subjects[chapter_id],
+                            "chapterId": chapter_id,
+                            "locationType": "chapter",
+                        }
                     docs.append({
                         "docId": item.get("docId", "unknown"),
                         "fileName": item.get("fileName", "Unknown"),
                         "text": text[:12000],
+                        **location,
                     })
         if not docs:
             return {"success": True, "results": [], "retrieval": "legacy"}
@@ -2325,6 +2226,9 @@ async def semantic_search(
                 scored.append({
                     "fileName": d["fileName"],
                     "docId": d["docId"],
+                    "subjectId": d["subjectId"],
+                    "chapterId": d["chapterId"],
+                    "locationType": d["locationType"],
                     "chunkIndex": int(idx),
                     "snippet": chunks[int(idx)][:400],
                     "score": round(float(sims[int(idx)]), 4),
@@ -2478,6 +2382,173 @@ async def export_all_data(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ── Profile & Settings ────────────────────────────────────────────────────────
+
+class ProfilePreferences(BaseModel):
+    emailNotifs: bool = True
+    pushNotifs: bool = False
+    aiTips: bool = True
+    soundEffects: bool = False
+
+
+class StudyDefaults(BaseModel):
+    weekdayHours: float = Field(3, ge=0.5, le=16)
+    weekendHours: float = Field(4, ge=0.5, le=16)
+    sessionLength: int = Field(45, ge=5, le=240)
+
+
+class ProfileRequest(BaseModel):
+    name: str = Field("", max_length=120)
+    university: str = Field("", max_length=200)
+    fieldOfStudy: str = Field("", max_length=200)
+    preferences: ProfilePreferences = Field(default_factory=ProfilePreferences)
+    studyDefaults: StudyDefaults = Field(default_factory=StudyDefaults)
+
+
+@app.get("/api/profile")
+async def load_profile(request: Request, user=Depends(get_current_user)):
+    item = db_get(pk=f"USER#{user['sub']}", sk="PROFILE")
+    if not item:
+        return {"success": True, "profile": None}
+    profile = strip_dynamo_keys(item)
+    return {"success": True, "profile": profile, "updatedAt": item.get("updatedAt")}
+
+
+@app.post("/api/profile")
+async def save_profile(request: Request, body: ProfileRequest, user=Depends(get_current_user)):
+    try:
+        data = body.model_dump()
+        data["name"] = data["name"].strip()
+        data["university"] = data["university"].strip()
+        data["fieldOfStudy"] = data["fieldOfStudy"].strip()
+        db_put(pk=f"USER#{user['sub']}", sk="PROFILE", data=data)
+        return {"success": True, "profile": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Account Deletion ──────────────────────────────────────────────────────────
+
+def _query_all_user_items(pk: str) -> list:
+    """Every item under the user's partition key, across all SK prefixes."""
+    items = []
+    query_args = {
+        "KeyConditionExpression": Key("PK").eq(pk),
+        "ProjectionExpression": "#pk, #sk, #doc, #cc, #ev, #s3",
+        "ExpressionAttributeNames": {
+            "#pk": "PK", "#sk": "SK", "#doc": "docId",
+            "#cc": "chunkCount", "#ev": "embeddingVersion", "#s3": "s3Key",
+        },
+    }
+    while True:
+        resp = table.query(**query_args)
+        items.extend(resp.get("Items", []))
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_args["ExclusiveStartKey"] = last_key
+    return [decimal_to_python(item) for item in items]
+
+
+def _delete_user_s3_prefix(prefix: str) -> dict:
+    """Delete every S3 object under prefix. Returns counts; never raises."""
+    deleted, errors = 0, []
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+            keys = [{"Key": obj["Key"]} for obj in page.get("Contents", []) or []]
+            for start in range(0, len(keys), 1000):
+                batch = keys[start:start + 1000]
+                resp = s3.delete_objects(
+                    Bucket=S3_BUCKET,
+                    Delete={"Objects": batch, "Quiet": True},
+                )
+                failed = resp.get("Errors", []) or []
+                deleted += len(batch) - len(failed)
+                errors.extend(f"{e.get('Key')}: {e.get('Code')}" for e in failed)
+    except Exception as e:
+        errors.append(f"list/delete failed: {e}")
+    return {"deleted": deleted, "errors": errors}
+
+
+@app.delete("/api/account")
+async def delete_account(request: Request, user=Depends(get_current_user)):
+    """Permanently delete all of the caller's data.
+
+    Removes S3 Vectors for every document, every S3 object under
+    documents/{sub}/, and every DynamoDB item under USER#{sub}. Each step is
+    best-effort and the endpoint is idempotent, so it can be safely retried.
+    The Cognito user itself is deleted by the frontend afterwards.
+    """
+    user_sub = user["sub"]
+    pk = f"USER#{user_sub}"
+    report = {"vectorsDeleted": 0, "s3ObjectsDeleted": 0, "itemsDeleted": 0, "errors": []}
+
+    try:
+        items = _query_all_user_items(pk)
+    except Exception as e:
+        print(f"delete_account: query failed for {pk}: {e}")
+        raise HTTPException(status_code=500, detail="Could not read account data. Please try again.")
+
+    # 1. S3 Vectors for every library document.
+    for item in items:
+        sk = item.get("SK", "")
+        if sk.startswith("SDOC#") or sk.startswith("CDOC#"):
+            try:
+                vector_store.delete_document_vectors(
+                    user_sub,
+                    item.get("docId"),
+                    int(item.get("chunkCount") or 0),
+                    int(item.get("embeddingVersion") or vector_store.EMBEDDING_VERSION),
+                )
+                report["vectorsDeleted"] += int(item.get("chunkCount") or 0)
+            except Exception as e:
+                report["errors"].append(f"vectors {item.get('docId')}: {e}")
+
+    # 2. Every uploaded file under the user's prefix (covers orphaned uploads too).
+    s3_result = _delete_user_s3_prefix(f"documents/{user_sub}/")
+    report["s3ObjectsDeleted"] = s3_result["deleted"]
+    report["errors"].extend(f"s3 {err}" for err in s3_result["errors"])
+    if s3_result["errors"]:
+        # Fallback for when s3:ListBucket is not granted: delete known keys directly.
+        for item in items:
+            key = item.get("s3Key")
+            if key and key.startswith(f"documents/{user_sub}/"):
+                delete_s3_object(key)
+
+    # 3. All DynamoDB items under the user's partition.
+    try:
+        with table.batch_writer() as batch:
+            for item in items:
+                batch.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
+        report["itemsDeleted"] = len(items)
+    except Exception as e:
+        print(f"delete_account: batch delete failed for {pk}, falling back: {e}")
+        for item in items:
+            try:
+                db_delete(pk=item["PK"], sk=item["SK"])
+                report["itemsDeleted"] += 1
+            except Exception as item_err:
+                report["errors"].append(f"item {item.get('SK')}: {item_err}")
+
+    _burst_hits.pop(user_sub, None)
+    if report["errors"]:
+        print(f"delete_account: completed with errors for {pk}: {report['errors'][:20]}")
+
+    remaining = len(items) - report["itemsDeleted"]
+    if remaining > 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Account data was only partially deleted ({remaining} items remain). Please try again.",
+        )
+    return {
+        "success": True,
+        "itemsDeleted": report["itemsDeleted"],
+        "s3ObjectsDeleted": report["s3ObjectsDeleted"],
+        "vectorsDeleted": report["vectorsDeleted"],
+        "warnings": len(report["errors"]),
+    }
 
 
 # ── PDF Upload to S3 ──────────────────────────────────────────────────────────

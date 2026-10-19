@@ -1,4 +1,4 @@
-   # StudyFlow - AI Knowledge Base Assistant
+# StudyFlow - AI Knowledge Base Assistant
 
 StudyFlow is a full-stack study productivity platform that helps students organize subjects, upload study material, generate AI study plans, chat with documents, create quizzes, and track progress. The upgraded version uses persistent cloud storage and a production-style RAG pipeline powered by OpenAI embeddings and Amazon S3 Vectors.
 
@@ -25,8 +25,9 @@ The app is designed so a student can upload course material once, keep it stored
 
 - AWS Cognito sign-up, login, and forgot-password flow.
 - Backend JWT signature verification using Cognito JWKS.
-- User-scoped cloud storage for planner data, subjects, chapters, documents, notes, chats, summaries, and progress.
+- User-scoped cloud storage for planner data, subjects, chapters, documents, notes, chats, summaries, progress, profile, and settings (preferences and study defaults).
 - Data persists across reloads and devices.
+- Self-service account deletion from Settings: removes all DynamoDB items, uploaded S3 files, S3 Vectors, and the Cognito user.
 
 ### Subject and Chapter Library
 
@@ -41,25 +42,24 @@ The app is designed so a student can upload course material once, keep it stored
 - Upload PDFs and other supported study files.
 - Store original files in Amazon S3.
 - Save document metadata and extracted text in DynamoDB.
-- Generate fresh presigned S3 URLs so documents continue working after reload.
+- Generate fresh presigned S3 URLs every time a document is opened, so documents keep working after reload or a long idle session.
 - In-app PDF viewer with page navigation and highlight-ready document experience.
 
 ### AI Study Tools
 
-- Generate structured study plans from uploaded documents.
-- Generate exam-ready summaries.
+- Generate structured study plans and exhaustive exam-ready summaries from the full document text.
 - Generate study notes from documents.
 - Generate quiz questions and answers.
-- Chat with a specific document.
+- Chat with a specific document (available before the document is analyzed).
 - Chat across the full document library with source attribution.
-- Increased analysis token budget for longer study plans and summaries.
+- Semantic search across the library, with results that jump to the containing subject or chapter.
 
 ### Persistent RAG With S3 Vectors
 
 - Splits document text into chunks.
 - Generates embeddings with OpenAI `text-embedding-3-large` (1536 dims).
 - Stores embeddings and chunk metadata in Amazon S3 Vectors.
-- Uses vector search for document chat and global library chat.
+- Uses vector search for document chat, global library chat, and semantic search. Analysis, notes, and quizzes read the full document text instead.
 - Includes batch backfill for documents uploaded before vector indexing existed.
 - Includes vector indexing status and retry controls.
 
@@ -181,6 +181,7 @@ This allows user-scoped and document-scoped semantic retrieval.
 ```text
 DynamoDB
   USER#{userId} / PLANNER
+  USER#{userId} / PROFILE
   USER#{userId} / SUBJECT#{subjectId}
   USER#{userId} / CHAPTER#{subjectId}#{chapterId}
   USER#{userId} / SDOC#{subjectId}#{docId}
@@ -261,7 +262,7 @@ Amazon S3 Vectors
 │   ├── pages/
 │   │   ├── DashboardPage.jsx       # Study dashboard
 │   │   ├── LibraryPage.jsx         # Subject/chapter/document workspace
-│   │   ├── SettingsPage.jsx        # Settings, export, vector backfill
+│   │   ├── SettingsPage.jsx        # Profile, preferences, export, vector backfill, account deletion
 │   │   ├── LoginPage.jsx
 │   │   ├── SignupPage.jsx
 │   │   └── ForgotPasswordPage.jsx
@@ -275,6 +276,7 @@ Amazon S3 Vectors
 │   │       ├── DocCard.jsx
 │   │       ├── AnalysisPanel.jsx
 │   │       ├── GlobalChatbot.jsx
+│   │       ├── LibrarySearch.jsx   # Semantic search bar
 │   │       ├── UploadModal.jsx
 │   │       ├── MoveModal.jsx
 │   │       └── NotesEditor.jsx
@@ -336,7 +338,7 @@ Run FastAPI locally:
 uvicorn main:app --reload
 ```
 
-The frontend API client currently points to the deployed Render backend. For local backend development, update the API base URL in `src/utils/api.js` or introduce a `VITE_API_BASE_URL` environment variable.
+The frontend API client uses `VITE_API_BASE_URL` and falls back to the deployed Render backend. For local backend development, copy `.env.example` to `.env.local` and set `VITE_API_BASE_URL=http://localhost:8000`.
 
 ---
 
@@ -363,6 +365,32 @@ VECTOR_INDEXING_ENABLED=true
 ```
 
 `VECTOR_RAG_ENABLED` should stay `false` until existing documents have been backfilled into S3 Vectors.
+
+Frontend environment variables (see `.env.example`):
+
+```env
+VITE_API_BASE_URL=            # defaults to the Render backend
+VITE_COGNITO_OAUTH_SCOPES=    # optional; add aws.cognito.signin.user.admin to allow Google account deletion
+```
+
+---
+
+## API Overview
+
+All endpoints except `GET /` require a Cognito JWT. AI endpoints are rate limited (per-user burst limit plus a daily quota).
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET/POST /api/subjects/*`, `/api/chapters/*` | Subject and chapter CRUD |
+| `/api/sdocs/*`, `/api/cdocs/*` | Subject/chapter documents, including `.../analyze` (full-text study plan + exam summary) |
+| `POST /api/docs/upload-pdf`, `POST /api/docs/move` | Upload to S3, move documents |
+| `POST /api/document-chat`, `POST /api/global-chat` | Document and library chat (vector RAG with legacy fallback) |
+| `POST /api/search` | Semantic search; results include `subjectId`, `chapterId`, `locationType` |
+| `POST /api/generate-notes`, `POST /api/generate-quiz` | Notes and quizzes from full document text |
+| `GET/POST /api/profile` | Profile, preferences, and study defaults |
+| `DELETE /api/account` | Delete all user data (DynamoDB, S3 files, S3 Vectors) |
+| `POST /api/vectors/reindex`, `POST /api/vectors/migrate` | Vector index retry and batch backfill |
+| `GET /api/usage`, `GET /api/export` | Usage stats and data export |
 
 ---
 
@@ -394,7 +422,7 @@ After upload, create a CloudFront invalidation:
 
 ### Backend: Render
 
-Deploy the FastAPI backend from the latest `main` branch.
+Deploy the FastAPI backend from the `main` branch (check the Render service's Build & Deploy branch setting).
 
 Render should install:
 
@@ -414,7 +442,7 @@ uvicorn main:app --host 0.0.0.0 --port $PORT
 2. Deploy frontend.
 3. Log in to StudyFlow.
 4. Go to Settings -> Data & storage -> Index document library.
-5. Click `Index batch` until documents show `Vector indexed`.
+5. Click `Index batch` until it reports all documents indexed (it also re-embeds documents indexed under an older `EMBEDDING_VERSION`).
 6. Change `VECTOR_RAG_ENABLED=true` on Render.
 7. Redeploy backend.
 8. Test document chat and global chat.
@@ -423,13 +451,13 @@ uvicorn main:app --host 0.0.0.0 --port $PORT
 
 ## Security Notes
 
-- Uploaded files are stored privately in S3 and accessed with presigned URLs.
+- Uploaded files are stored privately in S3 and accessed only through short-lived presigned URLs (no public-read fallback).
 - Document text and AI results are stored in DynamoDB.
 - Chunk text is stored as S3 Vector metadata for retrieval, so vector storage must be treated as sensitive.
 - Backend verifies Cognito JWT signatures before accessing user data.
-- AI endpoints should be protected with rate limits before heavy production use.
+- AI endpoints are rate limited with a per-user burst limiter and a DynamoDB-backed daily quota (`AI_DAILY_QUOTA`, `AI_BURST_MAX`, `AI_BURST_WINDOW_SECONDS`).
 - CORS should include only trusted frontend origins in production.
-- Account deletion should be audited to ensure full cleanup across DynamoDB, S3, and S3 Vectors.
+- Account deletion removes DynamoDB items, S3 objects under `documents/{userId}/`, and S3 Vectors, then deletes the Cognito user. The backend IAM user needs `dynamodb:BatchWriteItem`, `s3:ListBucket`, and `s3:DeleteObject` for full cleanup.
 
 ---
 

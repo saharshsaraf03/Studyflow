@@ -6,7 +6,7 @@
  * Automatically attaches the Cognito JWT to every request.
  */
 
-const BASE_URL = 'https://studyflow-rag-backend.onrender.com';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://studyflow-rag-backend.onrender.com';
 
 let _getToken = null;
 
@@ -24,7 +24,9 @@ async function apiFetch(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || body.error || `Server error (${response.status})`);
+    const error = new Error(body.detail || body.error || `Server error (${response.status})`);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }
@@ -44,27 +46,6 @@ export async function loadPlanner() {
 
 export async function deletePlanner() {
   return apiFetch('/api/planner', { method: 'DELETE' });
-}
-
-// ── Documents ─────────────────────────────────────────────────────────────────
-
-export async function saveDocument({ docId, fileName, extractedText, aiResults }) {
-  return apiFetch('/api/documents/save', {
-    method: 'POST',
-    body: JSON.stringify({ docId, fileName, extractedText, aiResults }),
-  });
-}
-
-export async function listDocuments() {
-  return apiFetch('/api/documents/list');
-}
-
-export async function getDocument(docId) {
-  return apiFetch(`/api/documents/${docId}`);
-}
-
-export async function deleteDocument(docId) {
-  return apiFetch(`/api/documents/${docId}`, { method: 'DELETE' });
 }
 
 // ── Chat History ──────────────────────────────────────────────────────────────
@@ -135,28 +116,6 @@ export async function migrateToCloud(planData) {
   return apiFetch('/api/migrate', {
     method: 'POST',
     body: JSON.stringify({ planData }),
-  });
-}
-
-// ── Notes ─────────────────────────────────────────────────────────────────────
-
-export async function saveNotes({ subjectName, content }) {
-  return apiFetch('/api/notes/save', {
-    method: 'POST',
-    body: JSON.stringify({ subjectName, content }),
-  });
-}
-
-export async function loadNotes() {
-  return apiFetch('/api/notes/load');
-}
-
-// ── Explain ───────────────────────────────────────────────────────────────────
-
-export async function explainText({ selectedText, context }) {
-  return apiFetch('/api/explain', {
-    method: 'POST',
-    body: JSON.stringify({ selectedText, context }),
   });
 }
 
@@ -341,6 +300,40 @@ export async function uploadPdfToS3({ file, docId }) {
       contentType: file.type || 'application/octet-stream',
     }),
   });
+}
+
+// ── Semantic Search ───────────────────────────────────────────────────────────
+
+export async function searchLibrary({ query, topK = 8, docId = null }) {
+  return apiFetch('/api/search', {
+    method: 'POST',
+    body: JSON.stringify({ query, topK, docId }),
+  });
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+
+export async function exportAllData() {
+  return apiFetch('/api/export');
+}
+
+// ── Profile & Settings ────────────────────────────────────────────────────────
+
+export async function loadProfile() {
+  return apiFetch('/api/profile');
+}
+
+export async function saveProfile(profile) {
+  return apiFetch('/api/profile', {
+    method: 'POST',
+    body: JSON.stringify(profile),
+  });
+}
+
+// ── Account ───────────────────────────────────────────────────────────────────
+
+export async function deleteAccount() {
+  return apiFetch('/api/account', { method: 'DELETE' });
 }
 
 // ── Usage & Stats ─────────────────────────────────────────────────────────────

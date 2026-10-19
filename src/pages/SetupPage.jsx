@@ -2,7 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { BookOpen, ArrowLeft, Sparkles, Clock, Calendar, AlertCircle, Library, Loader2 } from 'lucide-react';
 import { generateStudyPlan } from '../utils/PlannerEngine';
-import { listSubjects } from '../utils/api';
+import { listSubjects, loadProfile } from '../utils/api';
+
+// Study defaults from Settings: cached locally in sf_profile, synced from the cloud.
+function cachedStudyDefaults() {
+  try { return JSON.parse(localStorage.getItem('sf_profile') || '{}')?.studyDefaults || {}; } catch { return {}; }
+}
+
+const validHours = (value) => typeof value === 'number' && value >= 0.5 && value <= 16;
 
 /**
  * SetupPage — reads subjects FROM Library, adds exam config, generates plan
@@ -16,8 +23,15 @@ const SetupPage = ({ setPlanData }) => {
   const [librarySubjects, setLibrarySubjects] = useState([]);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
   const [subjects, setSubjects] = useState([]); // enriched with exam config
-  const [weekdayHours, setWeekdayHours] = useState(4);
-  const [weekendHours, setWeekendHours] = useState(6);
+  const [weekdayHours, setWeekdayHours] = useState(() => {
+    const d = cachedStudyDefaults();
+    return validHours(d.weekdayHours) ? d.weekdayHours : 4;
+  });
+  const [weekendHours, setWeekendHours] = useState(() => {
+    const d = cachedStudyDefaults();
+    return validHours(d.weekendHours) ? d.weekendHours : 6;
+  });
+  const hoursTouchedRef = React.useRef(false);
   const [errors, setErrors] = useState({});
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -36,6 +50,16 @@ const SetupPage = ({ setPlanData }) => {
       })
       .catch(() => {})
       .finally(() => setLoadingSubjects(false));
+
+    // Use the saved study defaults as initial hours unless the user already edited them.
+    loadProfile()
+      .then(r => {
+        const d = r?.profile?.studyDefaults;
+        if (!d || hoursTouchedRef.current) return;
+        if (validHours(d.weekdayHours)) setWeekdayHours(d.weekdayHours);
+        if (validHours(d.weekendHours)) setWeekendHours(d.weekendHours);
+      })
+      .catch(() => {});
   }, []);
 
   const updateSubject = (index, field, value) => {
@@ -197,9 +221,9 @@ const SetupPage = ({ setPlanData }) => {
                     </label>
                     <div className="flex items-center gap-3">
                       <input type="range" min="0.5" max="12" step="0.5" value={value}
-                        onChange={e => setter(Number(e.target.value))} className="flex-1 accent-primary-500" />
+                        onChange={e => { hoursTouchedRef.current = true; setter(Number(e.target.value)); }} className="flex-1 accent-primary-500" />
                       <input type="number" min="0.5" max="16" step="0.5" value={value}
-                        onChange={e => setter(Number(e.target.value))} className="sf-input w-16 text-center !py-2 !px-2" />
+                        onChange={e => { hoursTouchedRef.current = true; setter(Number(e.target.value)); }} className="sf-input w-16 text-center !py-2 !px-2" />
                       <span className="text-sm text-surface-500">hrs</span>
                     </div>
                     {error && <p className="mt-1 text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{error}</p>}
