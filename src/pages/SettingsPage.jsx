@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
-import { migrateVectors, getUsage, deleteAccount, loadProfile, saveProfile } from '../utils/api';
+import { migrateVectors, getUsage, deleteAccount, loadProfile, saveProfile, exportAllData } from '../utils/api';
 
 const DEFAULT_PREFERENCES = { emailNotifs: true, pushNotifs: false, aiTips: true, soundEffects: false };
 const DEFAULT_STUDY_DEFAULTS = { weekdayHours: 3, weekendHours: 4, sessionLength: 45 };
@@ -121,7 +121,7 @@ const prefsStatusText = (status, fallback) => {
 /* ── Main Settings Page ── */
 
 const SettingsPage = () => {
-  const { user, getToken, getAccessToken, isOAuthUser, logout } = useAuth();
+  const { user, getAccessToken, isOAuthUser, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
 
@@ -281,15 +281,9 @@ const SettingsPage = () => {
     setExporting(true);
     try {
       const { default: jsPDF } = await import('jspdf');
-      const { loadPlanner } = await import('../utils/api');
 
       // Fetch export data from backend
-      const token = await getToken();
-      const res = await fetch('https://studyflow-rag-backend.onrender.com/api/export', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Export failed');
-      const exportData = await res.json();
+      const exportData = await exportAllData();
 
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageW = pdf.internal.pageSize.getWidth();

@@ -6,7 +6,7 @@
  * Automatically attaches the Cognito JWT to every request.
  */
 
-const BASE_URL = 'https://studyflow-rag-backend.onrender.com';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://studyflow-rag-backend.onrender.com';
 
 let _getToken = null;
 
@@ -309,6 +309,12 @@ export async function searchLibrary({ query, topK = 8, docId = null }) {
     method: 'POST',
     body: JSON.stringify({ query, topK, docId }),
   });
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+
+export async function exportAllData() {
+  return apiFetch('/api/export');
 }
 
 // ── Profile & Settings ────────────────────────────────────────────────────────
