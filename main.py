@@ -1949,13 +1949,23 @@ async def migrate_vectors(
                 item,
             ))
 
+        def needs_indexing(item: dict) -> bool:
+            # Re-index anything not ready, edited since indexing, or embedded
+            # under an older EMBEDDING_VERSION (e.g. v1 text-embedding-3-small
+            # vectors, which v2 queries never match).
+            return not (
+                item.get("embeddingStatus") == "ready"
+                and item.get("contentHash") == vector_store.content_hash(item.get("extractedText", ""))
+                and int(item.get("embeddingVersion") or 0) == vector_store.EMBEDDING_VERSION
+            )
+
+        pending = [c for c in candidates if needs_indexing(c[4])]
+
         processed = []
         failed = []
-        for location_type, subject_id, chapter_id, sk, item in candidates:
+        for location_type, subject_id, chapter_id, sk, item in pending:
             if len(processed) >= limit:
                 break
-            if item.get("embeddingStatus") == "ready" and item.get("contentHash") == vector_store.content_hash(item.get("extractedText", "")):
-                continue
             status = index_document_item(
                 pk,
                 user["sub"],
@@ -1975,7 +1985,7 @@ async def migrate_vectors(
             "processed": processed,
             "failed": failed,
             "limit": limit,
-            "remainingHint": max(len(candidates) - len(processed), 0),
+            "remainingHint": max(len(pending) - len(processed), 0),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

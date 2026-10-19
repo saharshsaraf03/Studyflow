@@ -451,7 +451,11 @@ const SettingsPage = () => {
         setIndexingMsg(result.reason || 'Indexing is not available yet.');
       } else {
         const failedCount = result.failed?.length || 0;
-        setIndexingMsg(`Processed ${result.processed?.length || 0} document${(result.processed?.length || 0) === 1 ? '' : 's'}${failedCount ? `, ${failedCount} failed` : ''}.`);
+        const processedCount = result.processed?.length || 0;
+        const remaining = result.remainingHint || 0;
+        setIndexingMsg(processedCount === 0 && remaining === 0
+          ? 'All documents are indexed.'
+          : `Processed ${processedCount} document${processedCount === 1 ? '' : 's'}${failedCount ? `, ${failedCount} failed` : ''}. ${remaining ? `${remaining} remaining - click Index batch again.` : 'All documents are indexed.'}`);
       }
     } catch (err) {
       setIndexingMsg(err.message || 'Indexing failed.');
