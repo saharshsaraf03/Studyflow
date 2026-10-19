@@ -630,6 +630,74 @@ def legacy_context_for_document(client: OpenAI, extracted_text: str, query: str,
     return retrieve_relevant_chunks(client, chunks, chunk_embeddings, query=query, k=k)
 
 
+# Study plan + exam summary for library documents. Like notes and quizzes, this
+# always reads the full (bounded) document text rather than a top-k vector slice,
+# because an exhaustive summary needs every section, not just the chunks that
+# match one fixed query.
+DOC_ANALYSIS_SYSTEM_PROMPT = (
+    "You are an expert academic study planner and exam coach. "
+    + DOC_ADAPTIVE_PREAMBLE + " " + GROUNDING_RULES + """
+
+Given the material, produce:
+
+1. A STRUCTURED STUDY PLAN - break the content into topics with estimated hours, priority levels, and study order. Cover every major topic in the material, in its logical order.
+2. An EXAM-READY SUMMARY - exhaustive coverage of every concept, definition, formula, theorem, and example. Be thorough - a student should be able to study entirely from this summary. Reproduce formulas and definitions exactly as written, and preserve important numbers, units, conditions, and edge cases.
+
+Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
+{
+  "studyPlan": {
+    "title": "Subject name",
+    "totalEstimatedHours": 10,
+    "topics": [
+      {
+        "name": "Topic name",
+        "estimatedHours": 2,
+        "priority": "high",
+        "keyPoints": ["point1", "point2"],
+        "order": 1
+      }
+    ]
+  },
+  "examSummary": {
+    "title": "Subject name",
+    "sections": [
+      {
+        "heading": "Section heading",
+        "content": "Detailed content with concepts, definitions, formulas.",
+        "keyTerms": ["term1", "term2"],
+        "importantFormulas": ["formula1"],
+        "examTips": ["tip1"]
+      }
+    ]
+  }
+}"""
+)
+
+
+def analyze_document_text(client: OpenAI, extracted_text: str, file_name: str) -> dict:
+    """Generate the studyPlan/examSummary JSON from a document's full text."""
+    text = (extracted_text or "").strip()
+    context = text[:ANALYSIS_CONTEXT_CHARS]
+    user_prompt = f'Study material from "{file_name or "document"}":\n\n'
+    if len(text) > ANALYSIS_CONTEXT_CHARS:
+        user_prompt = (
+            "NOTE: The material is long and has been truncated; cover the portion "
+            "provided as completely as possible.\n\n" + user_prompt
+        )
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.3,
+        max_tokens=8000,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": DOC_ANALYSIS_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt + context},
+        ],
+    )
+    raw = response.choices[0].message.content
+    return parse_json_response(raw) or {"raw": raw}
+
+
 # ── RAG Route (v1 compatible path, now using OpenAI embeddings) ────────────────
 
 @app.post("/")
@@ -1344,47 +1412,12 @@ async def analyze_cdoc(
         if not extracted_text or len(extracted_text) < 10:
             raise HTTPException(status_code=400, detail="Document has no extractable text")
 
-        client = get_openai_client()
-        matches = []
-        if vector_store.should_query() and item.get("embeddingStatus") == "ready":
-            matches = vector_store.query_document_chunks(
-                client, user_id=user["sub"], doc_id=body.docId,
-                question="main topics chapters concepts definitions formulas", top_k=8
-            )
-        context = format_vector_context(matches) if matches else extracted_text[:ANALYSIS_CONTEXT_CHARS]
-
-        system_prompt = """You are an expert academic study planner. Given study material, produce:
-1. A STRUCTURED STUDY PLAN
-2. An EXAM-READY SUMMARY
-
-Respond ONLY with valid JSON (no markdown, no backticks):
-{
-  "studyPlan": {
-    "title": "Subject name",
-    "totalEstimatedHours": 10,
-    "topics": [{"name":"","estimatedHours":2,"priority":"high","keyPoints":[],"order":1}]
-  },
-  "examSummary": {
-    "title": "Subject name",
-    "sections": [{"heading":"","content":"","keyTerms":[],"importantFormulas":[],"examTips":[]}]
-  }
-}"""
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.3,
-            max_tokens=8000,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Study material:\n\n{context}"}
-            ]
+        ai_results = analyze_document_text(
+            get_openai_client(), extracted_text, item.get("fileName", "document")
         )
-        raw = response.choices[0].message.content
-        ai_results = parse_json_response(raw) or {"raw": raw}
 
         db_put(pk=pk, sk=f"CDOC#{body.chapterId}#{body.docId}", data={**strip_dynamo_keys(item), "aiResults": ai_results})
-        return {"success": True, "aiResults": ai_results, "retrieval": "vector" if matches else "legacy"}
+        return {"success": True, "aiResults": ai_results, "retrieval": "full"}
     except HTTPException:
         raise
     except Exception as e:
@@ -1554,31 +1587,11 @@ async def analyze_sdoc(
         extracted_text = item.get("extractedText", "")
         if not extracted_text or len(extracted_text) < 10:
             raise HTTPException(status_code=400, detail="Document has no extractable text")
-        client = get_openai_client()
-        matches = []
-        if vector_store.should_query() and item.get("embeddingStatus") == "ready":
-            matches = vector_store.query_document_chunks(
-                client, user_id=user["sub"], doc_id=doc_id,
-                question="main topics chapters concepts definitions formulas", top_k=8
-            )
-        context = format_vector_context(matches) if matches else extracted_text[:ANALYSIS_CONTEXT_CHARS]
-        system_prompt = """You are an expert academic study planner. Respond ONLY with valid JSON (no markdown):
-{
-  "studyPlan": {"title":"","totalEstimatedHours":10,"topics":[{"name":"","estimatedHours":2,"priority":"high","keyPoints":[],"order":1}]},
-  "examSummary": {"title":"","sections":[{"heading":"","content":"","keyTerms":[],"importantFormulas":[],"examTips":[]}]}
-}"""
-        response = client.chat.completions.create(
-            model="gpt-4o-mini", temperature=0.3, max_tokens=8000,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Study material:\n\n{context}"}
-            ]
+        ai_results = analyze_document_text(
+            get_openai_client(), extracted_text, item.get("fileName", "document")
         )
-        raw = response.choices[0].message.content
-        ai_results = parse_json_response(raw) or {"raw": raw}
         db_put(pk=pk, sk=f"SDOC#{subject_id}#{doc_id}", data={**strip_dynamo_keys(item), "aiResults": ai_results})
-        return {"success": True, "aiResults": ai_results, "retrieval": "vector" if matches else "legacy"}
+        return {"success": True, "aiResults": ai_results, "retrieval": "full"}
     except HTTPException:
         raise
     except Exception as e:
