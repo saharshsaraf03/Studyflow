@@ -137,33 +137,30 @@ const ChapterContent = ({ subject, chapter, chapterIndex, onDocCountChange }) =>
       setViewerPdfUrl(null);
       return;
     }
-    // Use pdfUrl from S3 — open directly in new tab
-    if (doc.pdfUrl) {
-      if (!isPdf) {
-        window.open(doc.pdfUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-      setViewerDoc(doc);
-      setViewerFile(null);
-      setViewerPdfUrl(doc.pdfUrl);
-      return;
-    }
-    // Fall back to full fetch
+    // Always fetch the doc so we get a freshly presigned pdfUrl: presigned S3
+    // URLs expire after an hour, so the one from the list call may be stale.
+    // Non-PDF files open in a new tab, which is created now (inside the click)
+    // so popup blockers allow it, then pointed at the fresh URL.
+    const newTab = isPdf ? null : window.open('', '_blank');
+    if (newTab) newTab.opener = null;
     try {
       const result = await getCDoc(chapter.chapterId, doc.docId);
       const fullDoc = result.doc || doc;
       if (fullDoc.pdfUrl) {
-        if (!fullDoc.fileName?.toLowerCase().endsWith('.pdf')) {
-          window.open(fullDoc.pdfUrl, '_blank', 'noopener,noreferrer');
+        if (!isPdf) {
+          if (newTab) newTab.location.href = fullDoc.pdfUrl;
+          else window.open(fullDoc.pdfUrl, '_blank', 'noopener,noreferrer');
           return;
         }
         setViewerDoc(fullDoc);
         setViewerFile(null);
         setViewerPdfUrl(fullDoc.pdfUrl);
       } else {
+        if (newTab) newTab.close();
         alert('No PDF available for this document. Please re-upload it.');
       }
     } catch {
+      if (newTab) newTab.close();
       alert('Failed to open document.');
     }
   }, [chapter]);

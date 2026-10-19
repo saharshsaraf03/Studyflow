@@ -133,33 +133,32 @@ const SubjectContent = ({ subject, onDocCountChange }) => {
       setViewerPdfUrl(null);
       return;
     }
+    // Always fetch the doc so we get a freshly presigned pdfUrl: presigned S3
+    // URLs expire after an hour, so the one from the list call may be stale.
+    // Non-PDF files open in a new tab, which is created now (inside the click)
+    // so popup blockers allow it, then pointed at the fresh URL.
+    const newTab = isPdf ? null : window.open('', '_blank');
+    if (newTab) newTab.opener = null;
     try {
       const result = await getSDoc(subject.subjectId, doc.docId);
       const fullDoc = result.doc || doc;
-      const pdfUrl = fullDoc.pdfUrl || doc.pdfUrl || '';
+      const pdfUrl = fullDoc.pdfUrl || '';
       if (pdfUrl && pdfUrl.startsWith('http')) {
-        if (!fullDoc.fileName?.toLowerCase().endsWith('.pdf')) {
-          window.open(pdfUrl, '_blank', 'noopener,noreferrer');
+        if (!isPdf) {
+          if (newTab) newTab.location.href = pdfUrl;
+          else window.open(pdfUrl, '_blank', 'noopener,noreferrer');
           return;
         }
         setViewerDoc(fullDoc);
         setViewerFile(null);
         setViewerPdfUrl(pdfUrl);
       } else {
+        if (newTab) newTab.close();
         alert('No PDF available. Please re-upload this document.');
       }
     } catch {
-      if (doc.pdfUrl && doc.pdfUrl.startsWith('http')) {
-        if (!isPdf) {
-          window.open(doc.pdfUrl, '_blank', 'noopener,noreferrer');
-          return;
-        }
-        setViewerDoc(doc);
-        setViewerFile(null);
-        setViewerPdfUrl(doc.pdfUrl);
-      } else {
-        alert('Failed to open document.');
-      }
+      if (newTab) newTab.close();
+      alert('Failed to open document.');
     }
   }, [subject]);
 
